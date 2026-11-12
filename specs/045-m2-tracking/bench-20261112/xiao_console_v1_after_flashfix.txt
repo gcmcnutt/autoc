@@ -1,0 +1,6 @@
+0071981 3373687 i Connected to central: 50:bb:b5:50:ca:d7, MTU 23
+0074622 3376331 i Listing 1 flight logs
+0078610 3380281 i Attempting download: flight_001.bin (size: 307968 bytes)
+0078611 3380281 i Starting download: flight_001.bin (307968 bytes) addr 0x1000-0x4c300
+0078613 3380281 i Download ready: flight_001.bin (307968 bytes), MTU:247
+0204333 3505939 i Download complete: 307968 bytes, CRC 645AC948, 1284 chunks in 125720 ms (2449 B/s), STAT:307968:0:31:153:226:160, last short len -1

@@ -1,0 +1,4 @@
+0075622 4257167 i Connected to central: 50:bb:b5:50:ca:d7, MTU 23
+0076483 4258015 i Listing 1 flight logs
+0080501 4262013 i Starting download: flight_001.bin (307968 bytes) addr 0x1000-0x4c300
+0080503 4262013 i BLE download: flight_001.bin from 0 of 307968 B, chunk 240, window 16, MTU 247

@@ -137,27 +137,34 @@
     const PROGRESS_THROTTLE_MS = 100;
     let lastProgressUpdate = 0;
 
-    // --- 045 F2 step 1: download instrumentation (contracts/ble-download-v2.md). Measures only; the protocol is unchanged.
-    // "Copy log" puts this in the clipboard so a field download can be pasted back as the measurement of record.
+    // --- 045 F2: download protocol v2 (contracts/ble-download-v2.md) + its instrumentation --------------------------------
+    // The firmware streams [u32 offset][payload] notifications up to `window` in flight; this page accepts them in order,
+    // ignores duplicates by offset, and ACKs the highest contiguous byte (every ACK_EVERY chunks, at the end, and rate-limited
+    // on a gap or a duplicate). A drop keeps the buffer: reconnect and press Download again to resume from where it stopped.
+    // "Copy log" puts the log in the clipboard so a field download can be pasted back as the measurement of record.
+    // Chunks in flight; ?window=N overrides it for bench measurements. Measured 2026-11-12 (Linux central): window 2 = 15.6 kB/s
+    // with no loss, 4 = 17.0 kB/s with a few recovered gaps, 8 = losses and a disconnect (the xiao's 256 B HCI receive ring
+    // overflows). The firmware caps the window at 8.
+    const DL2_WINDOW = Math.max(1, Math.min(8, parseInt(new URLSearchParams(location.search).get('window')) || 2));
+    const ACK_EVERY = Math.max(1, Math.floor(DL2_WINDOW / 2));
+    const ACK_MIN_GAP_MS = 100;            // rate limit for gap / duplicate ACKs
+    const resumeStore = {};                // file name -> { size, buf, expected } kept across reconnects
+    let dl2 = null;                        // the active transfer: { file, size, chunk, buf, expected, sinceAck, lastAckAt }
+    let ackInFlight = false, ackPending = false;
+
     const dlLog = [];
-    const dl = { t0: 0, chunkSize: 0, size: 0, sentAt: 0, outstanding: false, rtts: [], short: 0, dup: 0, chunks: 0,
-                 errors: 0, connectAt: 0 };
+    const dl = { t0: 0, connectAt: 0, chunks: 0, dup: 0, gap: 0, acks: 0, errors: 0, startOffset: 0 };
     function dlNow() { return dl.t0 ? (performance.now() - dl.t0).toFixed(1) : '-'; }
     function dlog(msg) {
       dlLog.push(`${new Date().toISOString()} t=${dlNow()}ms ${msg}`);
       if (dlLog.length > 20000) dlLog.splice(0, dlLog.length - 20000);  // bound memory on very long sessions
     }
-    function pct(arr, p) {
-      if (!arr.length) return NaN;
-      const a = [...arr].sort((x, y) => x - y);
-      return a[Math.min(a.length - 1, Math.floor(p * a.length))];
-    }
     function dlSummary(tag) {
       const secs = dl.t0 ? (performance.now() - dl.t0) / 1000 : 0;
-      dlog(`SUMMARY ${tag}: bytes=${downloadOffset}/${dl.size} secs=${secs.toFixed(2)} ` +
-           `kB/s=${secs > 0 ? (downloadOffset / 1024 / secs).toFixed(2) : 'n/a'} chunks=${dl.chunks} ` +
-           `short=${dl.short} dup=${dl.dup} errors=${dl.errors} rtt_ms median=${pct(dl.rtts, 0.5)?.toFixed?.(1)} ` +
-           `p90=${pct(dl.rtts, 0.9)?.toFixed?.(1)} max=${Math.max(0, ...dl.rtts).toFixed(1)} ua="${navigator.userAgent}"`);
+      const got = dl2 ? dl2.expected - dl.startOffset : 0;
+      dlog(`SUMMARY ${tag}: bytes=${dl2 ? dl2.expected : 0}/${dl2 ? dl2.size : 0} (this session ${got} from ${dl.startOffset}) ` +
+           `secs=${secs.toFixed(2)} kB/s=${secs > 0 ? (got / 1024 / secs).toFixed(2) : 'n/a'} chunks=${dl.chunks} ` +
+           `dup=${dl.dup} gap=${dl.gap} acks=${dl.acks} errors=${dl.errors} ua="${navigator.userAgent}"`);
     }
     async function copyDlLog() {
       const text = dlLog.join('\n') || '(empty log)';
@@ -169,6 +176,30 @@
         ta.value = text; ta.rows = 12; ta.style.width = '100%';
         document.body.appendChild(ta); ta.select();
         log('Clipboard unavailable: select the text box below and copy it');
+      }
+    }
+
+    // One GATT write at a time (overlapping writes fail with "GATT operation already in progress", the 2026-11-11
+    // field-failure mechanism): a newer ACK while one is in flight just marks pending, and the latest value goes next.
+    async function sendAck() {
+      if (!dl2) return;
+      if (ackInFlight) { ackPending = true; return; }
+      ackInFlight = true;
+      try {
+        do {
+          ackPending = false;
+          const msg = textEncoder.encode('ACK:' + dl2.expected);
+          dl2.lastAckAt = performance.now();
+          dl2.sinceAck = 0;
+          dl.acks++;
+          if (controlChar.writeValueWithoutResponse) await controlChar.writeValueWithoutResponse(msg);
+          else await controlChar.writeValue(msg);
+        } while (ackPending && dl2);
+      } catch (e) {
+        dl.errors++;
+        dlog(`ACK write error ${e.name}: ${e.message} at ${dl2 ? dl2.expected : '-'}`);
+      } finally {
+        ackInFlight = false;
       }
     }
 
@@ -264,10 +295,21 @@
     }
 
     function onDisconnected() {
-      dlog(`disconnected at offset ${downloadOffset}/${expectedFileSize}` +
+      dlog(`disconnected` + (dl2 ? ` at ${dl2.expected}/${dl2.size} of ${dl2.file}` : '') +
            (dl.connectAt ? ` after ${((performance.now() - dl.connectAt) / 1000).toFixed(1)} s connected` : ''));
-      if (expectedFileSize > 0) dlSummary('aborted by disconnect');
+      if (dl2) {
+        dlSummary('interrupted by disconnect');
+        resumeStore[dl2.file] = { size: dl2.size, buf: dl2.buf, expected: dl2.expected };
+        log(`Disconnected at ${dl2.expected} of ${dl2.size} bytes. Reconnect and press Download on ${dl2.file} to resume.`);
+        dl2 = null;
+        hideProgress();
+        return onDisconnectedButtons();
+      }
       log('Disconnected from XIAO-GP');
+      onDisconnectedButtons();
+    }
+
+    function onDisconnectedButtons() {
       document.getElementById('connectBtn').disabled = false;
       document.getElementById('disconnectBtn').disabled = true;
       document.getElementById('listBtn').disabled = true;
@@ -296,69 +338,56 @@
         log('File list received');
       } else if (value === 'ERASE_DONE') {
         log('✓ Flash erased! Device will reboot automatically...');
-      } else if (value.startsWith('READY:')) {
-        // Parse: READY:filesize:chunksize
-        const parts = value.substring(6).split(':');
-        if (parts.length >= 2) {
-          expectedFileSize = parseInt(parts[0]);
-          const chunkSize = parseInt(parts[1]);
-          downloadBuffer = new Uint8Array(expectedFileSize);
-          downloadOffset = 0;
-          Object.assign(dl, { t0: performance.now(), chunkSize, size: expectedFileSize, outstanding: false, rtts: [],
-                              short: 0, dup: 0, chunks: 0, errors: 0 });
-          dlog(`READY size=${expectedFileSize} chunk=${chunkSize}`);
-          // Request first chunk
-          requestNextChunk();
-        }
-      } else if (value.startsWith('DOWNLOAD_DONE')) {
-        // Parse: DOWNLOAD_DONE:CRC32:SIZE
-        const parts = value.split(':');
-        if (parts.length >= 3) {
-          const expectedCrc = parseInt(parts[1], 16);
-          const expectedSize = parseInt(parts[2]);
-
-          const actualCrc = crc32(downloadBuffer.subarray(0, downloadOffset));
-
-          dlog(`CRC expected=${expectedCrc.toString(16)} actual=${actualCrc.toString(16)} ` +
-               `${actualCrc === expectedCrc ? 'OK' : 'MISMATCH'}; size expected=${expectedSize} got=${downloadOffset}`);
-          dlSummary(actualCrc === expectedCrc ? 'done' : 'CRC mismatch');
-          if (actualCrc !== expectedCrc) {
-            log(`ERROR: CRC mismatch! Expected ${expectedCrc.toString(16)}, got ${actualCrc.toString(16)}`);
-            hideProgress();
-            expectedFileSize = 0;
+      } else if (value.startsWith('READY2:')) {
+        // READY2:<size>:<chunk>:<mtu>
+        const [size, chunk, mtu] = value.substring(7).split(':').map(x => parseInt(x));
+        if (!dl2) return;
+        if (dl2.size !== size) {
+          if (dl2.expected !== 0) {  // the file changed under a resume: start over from 0
+            dlog(`size changed ${dl2.size} -> ${size}: restarting ${dl2.file} from 0`);
+            dl2.size = size; dl2.buf = new Uint8Array(size); dl2.expected = 0;
+            controlChar.writeValue(textEncoder.encode(`DL2:${dl2.file}:0:${DL2_WINDOW}`));
             return;
           }
-
-          if (downloadOffset !== expectedSize) {
-            log(`WARNING: Size mismatch. Expected ${expectedSize}, got ${downloadOffset}`);
-          }
-
-          log(`Download verified: CRC ${actualCrc.toString(16)} OK`);
+          dl2.size = size; dl2.buf = new Uint8Array(size);
         }
+        dl2.chunk = chunk;
+        expectedFileSize = size;
+        dlog(`READY2 size=${size} chunk=${chunk} mtu=${mtu} from=${dl2.expected} window=${DL2_WINDOW}`);
+      } else if (value.startsWith('STAT:')) {
+        // instrumentation only (logged above)
+      } else if (value.startsWith('DONE2:')) {
+        // DONE2:<size>:<crc32>
+        const parts = value.substring(6).split(':');
+        if (!dl2) return;
+        const expectedCrc = parseInt(parts[1], 16);
+        const actualCrc = crc32(dl2.buf.subarray(0, dl2.expected));
+        dlog(`CRC expected=${expectedCrc.toString(16)} actual=${actualCrc.toString(16)} ` +
+             `${actualCrc === expectedCrc ? 'OK' : 'MISMATCH'}; bytes ${dl2.expected}/${dl2.size}`);
+        dlSummary(actualCrc === expectedCrc ? 'done' : 'CRC mismatch');
+        delete resumeStore[dl2.file];
+        if (actualCrc !== expectedCrc || dl2.expected !== dl2.size) {
+          log(`ERROR: CRC mismatch! Expected ${expectedCrc.toString(16)}, got ${actualCrc.toString(16)}`);
+          dl2 = null; hideProgress(); expectedFileSize = 0;
+          return;
+        }
+        log(`Download verified: CRC ${actualCrc.toString(16)} OK`);
+        downloadBuffer = dl2.buf; downloadOffset = dl2.expected; downloadFilename = dl2.file;
+        dl2 = null;
         saveDownload();
         hideProgress();
         expectedFileSize = 0;
-      } else if (value.startsWith('ERROR')) {
+      } else if (value.startsWith('ERR:') || value.startsWith('ERROR') || value === 'ABORTED') {
         dl.errors++;
-        dlog(`firmware error "${value}" at offset ${downloadOffset}`);
-        if (expectedFileSize > 0) dlSummary('firmware error');
+        dlog(`firmware error "${value}"`);
+        if (dl2) {
+          dlSummary('firmware error');
+          resumeStore[dl2.file] = { size: dl2.size, buf: dl2.buf, expected: dl2.expected };
+          log(`Download stopped (${value}) at ${dl2.expected} of ${dl2.size}. Press Download to resume.`);
+          dl2 = null;
+        }
         hideProgress();
         expectedFileSize = 0;
-      }
-    }
-
-    async function requestNextChunk() {
-      try {
-        dl.sentAt = performance.now();
-        dl.outstanding = true;
-        await controlChar.writeValue(textEncoder.encode('NEXT'));
-      } catch (error) {
-        dl.errors++;
-        dlog(`NEXT write error ${error.name}: ${error.message} at offset ${downloadOffset}`);
-        dlSummary('NEXT write error');
-        console.error('Error requesting next chunk:', error);
-        log('Error during download: ' + error);
-        hideProgress();
       }
     }
 
@@ -392,49 +421,37 @@
     }
 
     function handleDataChunk(event) {
-      // Accumulate only the valid bytes from this notification
-      const valueView = event.target.value;
-      const chunk = new Uint8Array(valueView.buffer, valueView.byteOffset, valueView.byteLength);
-
-      if (!downloadBuffer) {
-        dlog(`data chunk (${chunk.length} B) before READY; discarded`);
-        console.warn('Received data chunk before READY; discarding');
+      const dv = event.target.value;
+      if (!dl2 || !dl2.buf || dv.byteLength < 4) {
+        dlog(`data notification (${dv.byteLength} B) with no transfer ready; discarded`);
         return;
       }
-
-      // 045 F2 instrumentation: round trip, truncation (byteLength vs the expected chunk), duplicates
-      const rxAt = performance.now();
-      const expectLen = Math.min(dl.chunkSize, expectedFileSize - downloadOffset);
+      const off = dv.getUint32(0, true);
+      const len = dv.byteLength - 4;
+      const now = performance.now();
       dl.chunks++;
-      if (dl.outstanding) { dl.rtts.push(rxAt - dl.sentAt); dl.outstanding = false; }
-      else { dl.dup++; dlog(`DUP/unsolicited chunk ${chunk.length} B at offset ${downloadOffset}`); }
-      if (chunk.length !== expectLen) {
-        dl.short++;
-        if (dl.short <= 20) dlog(`SHORT chunk: got ${chunk.length} B, expected ${expectLen} at offset ${downloadOffset}`);
+      if (off === dl2.expected) {
+        if (off + len > dl2.size) { dlog(`chunk past the end: off=${off} len=${len} size=${dl2.size}`); return; }
+        dl2.buf.set(new Uint8Array(dv.buffer, dv.byteOffset + 4, len), off);
+        dl2.expected += len;
+        dl2.sinceAck++;
+        if (dl2.sinceAck >= ACK_EVERY || dl2.expected >= dl2.size) sendAck();
+      } else if (off < dl2.expected) {
+        dl.dup++;
+        if (now - dl2.lastAckAt >= ACK_MIN_GAP_MS) sendAck();   // tell a rewound sender where we are
+      } else {
+        dl.gap++;
+        if (dl.gap <= 20) dlog(`GAP: got off=${off}, expected ${dl2.expected}`);
+        if (now - dl2.lastAckAt >= ACK_MIN_GAP_MS) sendAck();   // ask the sender to go back
       }
-      if (dl.chunks <= 5 || dl.chunks % 64 === 0) {
-        dlog(`chunk #${dl.chunks} off=${downloadOffset} len=${chunk.length} rtt=${dl.rtts.length ? dl.rtts[dl.rtts.length - 1].toFixed(1) : '-'}ms`);
-      }
-
-      const bytesToCopy = Math.min(chunk.length, downloadBuffer.length - downloadOffset);
-      if (bytesToCopy > 0) {
-        downloadBuffer.set(chunk.subarray(0, bytesToCopy), downloadOffset);
-        downloadOffset += bytesToCopy;
-      }
-
-      // Throttle progress updates to reduce DOM thrashing
-      const now = Date.now();
+      if (dl.chunks <= 3 || dl.chunks % 256 === 0) dlog(`chunk #${dl.chunks} off=${off} len=${len} expected=${dl2.expected}`);
       if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS) {
-        const kbReceived = (downloadOffset / 1024).toFixed(1);
-        let progressPercent = 0;
-        if (expectedFileSize > 0) {
-          progressPercent = Math.min(100, Math.round((downloadOffset / expectedFileSize) * 100));
-        }
-        updateProgress(progressPercent, `Received ${kbReceived} KB (${progressPercent}%)`);
+        const pctDone = Math.min(100, Math.round(dl2.expected / dl2.size * 100));
+        const secs = (now - dl.t0) / 1000;
+        updateProgress(pctDone, `${(dl2.expected / 1024).toFixed(1)} KB (${pctDone}%)` +
+                       (secs > 0 ? ` · ${((dl2.expected - dl.startOffset) / 1024 / secs).toFixed(1)} kB/s` : ''));
         lastProgressUpdate = now;
       }
-      // Request-response: request next chunk after receiving this one
-      requestNextChunk();
     }
 
     async function listFiles() {
@@ -454,17 +471,18 @@
 
     async function downloadFile(filename) {
       try {
-        downloadBuffer = null;
-        downloadOffset = 0;
+        const saved = resumeStore[filename];
+        dl2 = { file: filename, size: saved ? saved.size : 0, chunk: 0, buf: saved ? saved.buf : null,
+                expected: saved ? saved.expected : 0, sinceAck: 0, lastAckAt: 0 };
+        Object.assign(dl, { t0: performance.now(), chunks: 0, dup: 0, gap: 0, acks: 0, errors: 0,
+                            startOffset: dl2.expected });
         downloadFilename = filename;
-        log('Starting download: ' + filename);
-        updateProgress(0, 'Starting...');
-
-        await controlChar.writeValue(textEncoder.encode('DL:' + filename));
-
-        log('Downloading... (wait for status notification)');
-
+        log((saved ? `Resuming ${filename} at ${saved.expected} of ${saved.size} bytes` : 'Starting download: ' + filename));
+        updateProgress(saved ? Math.round(saved.expected / saved.size * 100) : 0, saved ? 'Resuming...' : 'Starting...');
+        dlog(`DL2 ${filename} from ${dl2.expected}`);
+        await controlChar.writeValue(textEncoder.encode(`DL2:${filename}:${dl2.expected}:${DL2_WINDOW}`));
       } catch (error) {
+        dlog(`DL2 write error ${error.name}: ${error.message}`);
         log('Error downloading: ' + error);
         hideProgress();
       }

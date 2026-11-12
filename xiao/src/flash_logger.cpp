@@ -590,6 +590,13 @@ int flashLoggerReadChunk(uint8_t* buffer, size_t maxLen) {
   return (int)toRead;
 }
 
+bool flashLoggerSeekDownload(uint32_t offset) {
+  if (currentState != FLASH_DOWNLOADING || offset > downloadEndAddr - downloadStartAddr) return false;
+  downloadReadAddr = downloadStartAddr + offset;
+  downloadBytesSent = offset;
+  return true;
+}
+
 void flashLoggerStopDownload() {
   currentState = FLASH_IDLE;
   downloadStartAddr = 0;

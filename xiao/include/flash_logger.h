@@ -36,6 +36,8 @@ uint32_t flashLoggerGetCurrentFlightNumber();
 bool flashLoggerStartDownload(const char* filename);
 int flashLoggerReadChunk(uint8_t* buffer, size_t maxLen);
 void flashLoggerStopDownload();
+// 045 F2: move the download read cursor to `offset` bytes into the active file (v2 resume / go-back-N).
+bool flashLoggerSeekDownload(uint32_t offset);
 FlashLoggerState flashLoggerGetState();
 bool flashLoggerHasPendingData();
 uint32_t flashLoggerGetActiveDownloadSize();

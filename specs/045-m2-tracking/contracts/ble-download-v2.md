@@ -30,3 +30,27 @@ Rules:
 - Whole-file CRC32 is still checked at the end.
 
 Acceptance: spec SC-002 (~300 kB < 60 s with the phone ~3 m from the aircraft; an interrupted download resumes and is byte-identical to a wired read).
+
+## As built (2026-11-12, tasks T018–T022; measured from the training host's Linux central)
+
+- **v1 (`DL:` / `NEXT`) is removed** (clean cut, Constitution III). Control accepts write **and write-without-response** (the
+  page sends ACKs without response).
+- `DL2:<file>:<offset>:<window>` → `READY2:<size>:<chunk>:<mtu>`, chunk = min(MTU − 7, 240). The firmware does **not** start an
+  MTU exchange (ArduinoBLE's peripheral path can't); centrals do (BlueZ: 23 at connect, 247 by `READY2`). MTU 23 ⇒ 16 B chunks
+  (works, slowly); MTU ≤ 7 ⇒ `ERR:MTU`.
+- Data: `[u32 offset LE][payload]`, one notification each, up to `window` in flight. **The page defaults to window 2; the
+  firmware caps it at 8.** Measured: window 2 = 15.6 kB/s with no loss; 4 = 17.0 kB/s with a few recovered gaps; 8 = heavy loss
+  and a disconnect, because ArduinoBLE's 256 B HCI receive ring drops events when a burst fills it.
+- Page rules: accept in order; ignore a duplicate by offset; ACK the highest contiguous byte every max(1, window / 2) chunks,
+  at the end, and on a gap or a duplicate at most once per 100 ms; **one GATT write at a time** (a newer ACK while one is in
+  flight marks pending, and the latest value goes next).
+- Firmware: go back to the ACK on a non-advancing ACK (once per 100 ms) or after 400 ms without progress; no ACK for 5 s ⇒
+  `ERR:INACTIVE:<offset>` and the flash returns to idle. A notify shorter than chunk + 4 ⇒ `ERR:SHORT_NOTIFY:<offset>`.
+- End: `STAT:<acked>:<notifies>:<rewinds>:<max_loop_ms>:<read_ms>:<notify_ms>`, then `DONE2:<size>:<crc32>`. The CRC is a
+  separate whole-file pass (resume and go-back-N send bytes out of order). Errors: `ERR:<MTU|NOFILE|RANGE|SEEK|READ|SHORT_NOTIFY|
+  INACTIVE|BUSY|BADCMD>:<offset>`; `ABORTED` after `ABORT`.
+- Resume: a drop keeps the page's buffer, keyed by file name with its size checked at `READY2` (a changed size restarts from 0).
+  Reconnect and press Download again: the page sends `DL2:<file>:<expected>`.
+- The firmware asks for a 7.5–15 ms connection interval (`BLE.setConnectionInterval(6, 12)`); BlueZ granted ~10–12 ms.
+  2M PHY is not exposed by ArduinoBLE. While a download runs on the ground, the main loop polls INAV at 2 Hz instead of every NN
+  tick: not skipped outright, because the state poll is how an arm is seen, and arming stops BLE.

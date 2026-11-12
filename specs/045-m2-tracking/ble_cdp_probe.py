@@ -10,6 +10,7 @@ import websocket
 
 SAMPLE_S = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
 OUT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/ble_probe.json"
+INTERRUPT_S = float(sys.argv[3]) if len(sys.argv) > 3 else 0.0   # >0: disconnect after this many s of download, reconnect, resume
 ALLOWED_CALLS = {"connect()", "listFiles()", "disconnect()"}
 
 PROBE_JS = r"""(()=>{ if (window.__probe) return 'already';
@@ -80,6 +81,18 @@ def main():
     c.call("Page.reload", {"ignoreCache": True}); c.pump(3)
     print("probe:", c.js(PROBE_JS))
     assert "connect()" in ALLOWED_CALLS
+    do_connect(c)
+    print("status:", c.js("document.getElementById('status').textContent"))
+    c.js("listFiles()", gesture=True); c.pump(4)
+    html = c.js("document.getElementById('fileList').innerHTML") or ""
+    files = re.findall(r"downloadFile\('([^']+)'\)", html)
+    print("files:", files)
+    if not files: raise SystemExit("no files listed")
+    run_download(c, files, OUT)
+
+
+def do_connect(c):
+    c.events = []
     c.js("connect()", gesture=True)                      # opens the device chooser
     picked = None; t0 = time.time()
     while not picked and time.time() - t0 < 30:
@@ -96,20 +109,27 @@ def main():
     for _ in range(40):
         if "Connected" in (c.js("document.getElementById('connectionStatus').textContent") or ""): break
         c.pump(0.5)
-    print("status:", c.js("document.getElementById('status').textContent"))
-    c.js("listFiles()", gesture=True); c.pump(4)
-    html = c.js("document.getElementById('fileList').innerHTML") or ""
-    files = re.findall(r"downloadFile\('([^']+)'\)", html)
-    print("files:", files)
-    if not files: raise SystemExit("no files listed")
+
+
+def run_download(c, files, OUT):
     target = files[-1]
     c.js(f"downloadFile({json.dumps(target)})", gesture=True)
     print(f"downloading {target} for {SAMPLE_S:.0f} s ...", flush=True)
-    t_dl = time.time()
+    t_dl = time.time(); interrupted = False
     while time.time() - t_dl < SAMPLE_S:   # stop early once the page reports the download finished or failed
         c.pump(1.0)
         st = c.js("document.getElementById('status').textContent") or ""
-        if time.time() - t_dl > 3 and ("verified" in st or "CRC mismatch" in st or "Error" in st or "Disconnected" in st):
+        if INTERRUPT_S > 0 and not interrupted and time.time() - t_dl >= INTERRUPT_S:
+            interrupted = True
+            print(f"interrupting at {time.time() - t_dl:.1f} s: disconnect()", flush=True)
+            c.js("disconnect()", gesture=True); c.pump(3)
+            print("after disconnect:", c.js("document.getElementById('status').textContent"), flush=True)
+            do_connect(c)
+            c.js(f"downloadFile({json.dumps(target)})", gesture=True)   # the page resumes from its kept buffer
+            print("resumed:", c.js("document.getElementById('status').textContent"), flush=True)
+            continue
+        if time.time() - t_dl > 3 and ("verified" in st or "saved" in st or "CRC mismatch" in st or "Error" in st
+                                       or "Disconnected" in st):
             break
     print(f"download phase {time.time() - t_dl:.1f} s", flush=True)
     probe = c.js("JSON.stringify(window.__probe.ev)")

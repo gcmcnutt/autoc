@@ -166,17 +166,19 @@ on *disarmed and downloading*.
   downloads a full ~300 kB log at ~3 m (the SC-002 distance), plus one pass at a longer range for the record. Paste the **Copy log** output into
   `specs/045-m2-tracking/ble-measure-YYYYMMDD.md`, plus a `ble_cdp_probe.py` run from the training host. Record the measured cause
   (MTU, round trip, duplicate delivery, MSP-poll stalls) in research.md R2 "Measured" (US2 AS3). ⛔ T018–T022 wait for this record
+  — *2026-11-12: the Linux-central record is in R2 (the cause: a spurious driver BUSY after every flash read, then stop-and-wait);
+  the field-phone run is still owed*
 
 ### Step 2: protocol v2 (tests first)
 
-- [ ] T018 [US2] Test first. Write a pure window state machine `xiao/include/ble_dl2.h`: next offset, acked offset, window, resend
+- [X] T018 [US2] Test first. Write a pure window state machine `xiao/include/ble_dl2.h`: next offset, acked offset, window, resend
   from the ack on a gap, 5 s inactivity ⇒ idle, short notify ⇒ `ERR:SHORT_NOTIFY`. Test it in the new `tests/ble_dl2_tests.cc`
   against a simulated channel that drops, duplicates and reorders notifications. A reference receiver in the test implements the
   contract's page rules: offset-tagged chunks, duplicates ignored, ACK = highest contiguous byte. Assert byte-identical reassembly
   and resume from any cut point. Also test the pure gate predicate `dl2ShouldSkipMspPoll(downloading, armed)` that T021 uses: true
   only when downloading and disarmed; false the moment `armed` goes true. Register the test in `CMakeLists.txt` (⇒ clean `rebuild-perf.sh` before the next
   determinism-affecting run, operator)
-- [ ] T019 [US2] Firmware v2 in `xiao/src/bluetooth.cpp`, using `ble_dl2.h`:
+- [X] T019 [US2] Firmware v2 in `xiao/src/bluetooth.cpp`, using `ble_dl2.h`:
   - `DL2:<file>:<offset>:<window>` → `READY2:<size>:<chunk>:<mtu>` (chunk = MTU − 3 − 4);
   - notifications `[u32 offset][payload]`, back to back, up to `window` unacknowledged;
   - `ACK:<offset>`, `ABORT`, `DONE2:<size>:<crc32>`, `ERR:<reason>:<offset>`;
@@ -185,12 +187,12 @@ on *disarmed and downloading*.
   - request a short connection interval and 2M PHY where available.
 
   T018 passes
-- [ ] T020 [US2] Clear the download wedge: the 5 s inactivity timeout clears `transferInProgress` and returns
+- [X] T020 [US2] Clear the download wedge: the 5 s inactivity timeout clears `transferInProgress` and returns
   `xiao/src/flash_logger.cpp` from `FLASH_DOWNLOADING` (~lines 547–556) to idle, so a new `DL2` is accepted without a reconnect
-- [ ] T021 [US2] `xiao/src/controller.cpp` `controllerUpdate()`: skip MSP polling only when `dl2ShouldSkipMspPoll()` (from
+- [X] T021 [US2] `xiao/src/controller.cpp` `controllerUpdate()`: skip MSP polling only when `dl2ShouldSkipMspPoll()` (from
   `ble_dl2.h`, tested in T018) says so, i.e. while a download runs **and** INAV reports disarmed. Arming still stops BLE, as
   today. Verified on the bench in T023
-- [ ] T022 [US2] Page v2 client in `xiao/web/flight_logger.html`: `DL2` with resume; ACK every N chunks and on a gap; duplicates
+- [X] T022 [US2] Page v2 client in `xiao/web/flight_logger.html`: `DL2` with resume; ACK every N chunks and on a gap; duplicates
   ignored by offset; the received buffer kept across reconnects, keyed by file name + size; CRC32 checked at `DONE2`. The T015
   instrumentation stays
 - [ ] T023 [US2] (operator) SC-002 acceptance (quickstart § 8 step 3). Build gate first: `cmake --build build && (cd build &&

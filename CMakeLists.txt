@@ -338,6 +338,12 @@ if(ENABLE_AUTOC_TESTS)
   target_compile_definitions(flightlog_roundtrip_tests PRIVATE
     FLIGHTLOG_FIXTURE_DIR="${CMAKE_BINARY_DIR}/fixtures")
 
+  # 045 F2 T018 -- BLE download protocol v2 send window (xiao/include/ble_dl2.h, pure logic) against a simulated
+  # lossy / duplicating / reordering link; the receiver mirrors the page's rules.
+  add_executable(ble_dl2_tests tests/ble_dl2_tests.cc)
+  target_link_libraries(ble_dl2_tests GTest::gtest GTest::gtest_main)
+  target_include_directories(ble_dl2_tests PRIVATE xiao/include)
+
   # 039 T003/T004 -- nn2cpp unrolled-recurrent emission equivalence (D6).
   # Drives the real nn2cpp binary + g++ harness compiles; paths injected here.
   add_executable(nn2cpp_unroll_tests tests/nn2cpp_unroll_tests.cc)
@@ -401,6 +407,7 @@ if(ENABLE_AUTOC_TESTS)
   add_test(NAME nn2cpp_unroll_tests COMMAND nn2cpp_unroll_tests)
   add_test(NAME arena_recenter_tests COMMAND arena_recenter_tests)
   add_test(NAME flightlog_roundtrip_tests COMMAND flightlog_roundtrip_tests)
+  add_test(NAME ble_dl2_tests COMMAND ble_dl2_tests)
 
   # 044 FR-016 — the index-free layout gate. (a) No literal input index or count
   # in any hand-written consumer: the layout lives in include/autoc/nn/nn_inputs.h
@@ -462,6 +469,7 @@ if(ENABLE_AUTOC_TESTS)
             arena_recenter_tests
             nn2cpp_unroll_tests
             flightlog_roundtrip_tests
+            ble_dl2_tests
             # 043 T021a — these two were registered via add_executable + add_test
             # (so ctest ran them) but were in NEITHER this DEPENDS list NOR the
             # COMMAND chain below, so `make` (i.e. scripts/rebuild-perf.sh, the
@@ -487,6 +495,7 @@ if(ENABLE_AUTOC_TESTS)
     COMMAND arena_recenter_tests --gtest_brief=1
     COMMAND nn2cpp_unroll_tests --gtest_brief=1
     COMMAND flightlog_roundtrip_tests --gtest_brief=1
+    COMMAND ble_dl2_tests --gtest_brief=1
     COMMAND selection_tests --gtest_brief=1
     COMMAND contract_evaluator_tests --gtest_brief=1
     COMMAND contract_config_tests --gtest_brief=1

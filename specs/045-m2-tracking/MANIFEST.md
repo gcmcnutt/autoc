@@ -104,7 +104,14 @@ runs (fresh `retain=expire`); `--days 0` (dry run) would remove both (20 files, 
 | 2026-11-12 | same | wired USB dump | **5.98 s (50.3 kB/s)**, flash read 206 ms, USB write 3.2 s; byte-identical |
 | 2026-11-12 | same | BLE, Linux central (Chromium 157 / BlueZ, `ble_cdp_probe.py`), ~1 m | 307 968 B in **125.7 s (2.39 kB/s)**, CRC OK, MTU 247, 0 short / 0 dup / 0 errors, RTT median 97.5 ms; STAT read 226 ms + notify 160 ms total |
 
-⏳ The field-phone run at ~3 m (T017's phone half) is owed by the operator.
+| 2026-11-12 | v2, window 16 | BLE, Linux central | raw 7.0 kB/s but 501 gaps / 59 rewinds, effective 2.7 kB/s, **disconnected at 33.8 s** (buffer kept for resume) |
+| 2026-11-12 | v2, window 2 / 4 / 8 | BLE, Linux central | **19.3 s (15.6 kB/s), 0 gaps** / 17.7 s (17.0 kB/s), 6 recovered gaps / heavy loss + disconnect ⇒ page default 2, firmware cap 8 |
+| 2026-11-12 | v2, window 2 | interrupt at 8 s + reconnect + resume | dropped at 134 400 B, resumed from 134 400, done; CRC **645ac948 = the wired dump** (byte-identical) |
+| 2026-11-12 | v2 final build (cap 8) | BLE, Linux central | 19.4 s (15.5 kB/s), 0 gaps, CRC OK. xiao `pio run` RAM 53.8 %, flash 46.1 %; ctest **56 / 56** after a clean `rebuild-perf.sh` (+ `ble_dl2_tests` 8 / 8) |
+
+Captures: [`bench-20261112/`](bench-20261112/) (probe JSON with the page's own log, and the xiao console).
+⏳ Owed by the operator: the field phone and the Windows / Edge laptop at ~3 m (T017 phone half, T023), and T023's arm-mid-download
+check (needs the TX).
 
 ## § Gates
 

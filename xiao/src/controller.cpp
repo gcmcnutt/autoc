@@ -1,4 +1,5 @@
 #include <main.h>
+#include "ble_dl2.h"  // 045 F2: dl2::shouldSkipMspPoll
 #include <ArduinoEigenDense.h>
 
 #include <autoc/eval/aircraft_state.h>
@@ -44,10 +45,16 @@ void controllerUpdate()
     nextLoopTime = now + MSP_LOOP_INTERVAL_MSEC;
   }
 
-  if ((loopCounter % MSP_NN_EVAL_DIVISOR) == 0)
+  // 045 F2 (T021): while a BLE download runs on the ground, poll INAV at 2 Hz instead of every NN tick, so the blocking MSP
+  // request doesn't stall the download loop. Not skipped outright: the state poll is how an arm is noticed, and arming must
+  // still stop BLE within ~0.5 s.
+  static unsigned long lastSlowPollMs = 0;
+  const bool slow = dl2::shouldSkipMspPoll(blueToothDownloadActive(), state.isArmed());
+  if ((loopCounter % MSP_NN_EVAL_DIVISOR) == 0 && (!slow || now - lastSlowPollMs >= 500))
   {
     // NN tick: fetch state, eval NN, update cache, send immediately
     mspUpdateState();
+    lastSlowPollMs = now;
   }
 
   // Every tick: send cached RC commands

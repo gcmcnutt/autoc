@@ -237,6 +237,12 @@ Linux central (FR-005). The field phone's run is still owed (T017):
   the BLE rate. ⇒ The dominant BLE cost is the protocol: **windowed streaming** (several notifications per connection event) and
   a shorter connection interval are the fix; resume and duplicate tolerance stay required (FR-004, the 11-11 duplicate failure).
 
+**v2 measured 2026-11-12 (T018–T022, Linux central, ~1 m)**: window 2 → 307 968 B in **19.3 s (15.6 kB/s)**, 0 gaps, CRC
+`645ac948` = the wired dump; window 4 → 17.7 s (17.0 kB/s), 6 recovered gaps; window 8 → heavy loss and a disconnect (ArduinoBLE's
+256 B HCI receive ring overflows), so the page defaults to 2 and the firmware caps at 8. **Interrupt + resume**: disconnected at
+134 400 B, reconnected, resumed from 134 400, finished byte-identical (same CRC). v1 took 125.7 s on the same link. ⏳ The field phone
+and the Windows / Edge laptop are still to be measured (T017 / T023).
+
 **Decision**:
 1. **Instrument first** (operator's direction). Page: t0 at READY, per-chunk send→receive time, `byteLength` against the chunk
    size (detects truncation), offset, error name + offset on failure, disconnect offset and elapsed time, an in-memory log with a

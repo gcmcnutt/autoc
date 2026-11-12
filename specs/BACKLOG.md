@@ -58,6 +58,20 @@ Candidate: a per-scenario variation class (joint PRNG draw, like the 040 camera-
 of attitude), sized from the measured spread across articles and remounts. Trigger: after the re-fly measures the residuals
 (cal_verify.py, nav_heading_check.py), and before the next M1 bake. Pairs with N5 (estimator-error parity) in 045.
 
+### [045 US2, filed 2026-11-12 · xiao] The core's `nrfx_qspi_mem_busy_check` reports a spurious BUSY after reads
+
+Measured with the console `QPROF` (research R2): after any QSPI read at a new address, the precompiled SDK 15 driver call reports
+BUSY (0x11) for ~60 ms (max ~200 ms) while the flash's own status byte (custom RDSR) reads 0x00. The download read path no longer
+polls (fixed in 045). The **program / erase waits in `flash_logger.cpp` still use it**: a spurious BUSY there costs time, not data
+(it waits longer than needed). Candidate: a busy check from our own RDSR custom instruction for the write path, then measure the
+logger's flush timing in the 20 Hz loop. Trigger: any flash-write latency question in the flight loop.
+
+### [045 US2, filed 2026-11-12 · xiao, low] ArduinoBLE's 256 B HCI receive ring caps the BLE download window
+
+Download v2 loses notifications above window ~4 (window 8: heavy loss and a disconnect) because `HCICordioTransport::handleRxData`
+drops incoming HCI traffic (ACKs, completed-packet events) when its 256 B ring is full. Window 2 gives 15.6 kB/s, which is plenty
+(SC-002). A larger ring in a patched ArduinoBLE would allow bigger windows; not needed now.
+
 ## 044 deferrals (filed 2026-11-08, from the acceptance flight)
 
 ### [044 close, filed 2026-11-08 · ⭐ OPEN GATE · deferred behind 045 M2 fidelity work] SC-002 pitch missed in flight — separate airframe from policy before any corrective bake

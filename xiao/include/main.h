@@ -93,6 +93,8 @@ void blueToothLoop();
 void blueToothSetEnabled(bool enabled);
 // 045 F2: USB-serial console commands (LIST, DUMP:<file>) — the wired log read; disarmed only.
 void serialConsoleLoop();
+// 045 F2: true while a BLE v2 download holds the flash (controller.cpp slows its MSP polling then).
+bool blueToothDownloadActive();
 
 // GP rabbit path following functions
 void convertMSPStateToAircraftState(AircraftState& aircraftState);
