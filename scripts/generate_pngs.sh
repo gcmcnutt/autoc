@@ -99,6 +99,7 @@ mkdir -p "$OUT"
 echo "generate_pngs: mode=$MODE name=$NAME gen=$GEN bucket=$BUCKET"
 echo "  run=$RUN"
 echo "  out=$OUT  config=$(basename "$INI")  compare=$(( ${#COMPARE[@]} / 2 ))  tick=${TICK_SEC}s"
+echo "  dmp cache=${AUTOC_DMP_CACHE:-disabled (AUTOC_DMP_CACHE unset)}"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 TICK="$TMP/tick.csv"; SUMMARY="$TMP/summary.csv"

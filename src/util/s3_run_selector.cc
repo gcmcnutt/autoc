@@ -2,10 +2,19 @@
 #include "autoc/util/s3_run_selector.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
+
+#include <unistd.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
@@ -123,20 +132,126 @@ std::vector<std::string> listRunGenKeys(const Aws::S3::S3Client& s3, const std::
     return out;
 }
 
+// --- 045 F1: local dmp cache -------------------------------------------------
+
+namespace {
+namespace fs = std::filesystem;
+
+std::string inflateIfZstd(const std::string& key, const std::string& raw) {
+    return isZstdKey(key) ? zstdDecompress(raw) : raw;  // FR-P09 inflate legacy-safe
+}
+
+// Write `bytes` to `p` atomically: a uniquely named tmp file in the same dir, then
+// rename, so a concurrent reader never sees a partial entry.
+void dmpCacheWriteAtomic(const fs::path& p, const std::string& bytes) {
+    std::error_code ec;
+    fs::create_directories(p.parent_path(), ec);
+    if (ec) {
+        throw std::runtime_error("dmp cache: cannot create " + p.parent_path().string() + ": " +
+                                 ec.message());
+    }
+    static std::atomic<unsigned> seq{0};
+    const fs::path tmp = p.string() + ".tmp." + std::to_string(::getpid()) + "." +
+                         std::to_string(seq.fetch_add(1));
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        out.close();
+        if (!out) {
+            fs::remove(tmp, ec);
+            throw std::runtime_error("dmp cache: cannot write " + tmp.string());
+        }
+    }
+    fs::rename(tmp, p, ec);
+    if (ec) {
+        std::error_code ignore;
+        fs::remove(tmp, ignore);
+        throw std::runtime_error("dmp cache: cannot rename " + tmp.string() + " -> " + p.string() +
+                                 ": " + ec.message());
+    }
+}
+}  // namespace
+
+DmpCacheConfig dmpCacheConfigFromEnvValue(const char* value) {
+    DmpCacheConfig c;
+    if (value != nullptr) c.dir = value;
+    return c;
+}
+
+const DmpCacheConfig& dmpCacheConfigFromEnv() {
+    static const DmpCacheConfig cfg = [] {
+        DmpCacheConfig c = dmpCacheConfigFromEnvValue(std::getenv("AUTOC_DMP_CACHE"));
+        if (!c.enabled()) {
+            std::cerr << "dmp cache: disabled (AUTOC_DMP_CACHE unset)\n";
+            return c;
+        }
+        std::error_code ec;
+        fs::create_directories(c.dir, ec);
+        if (ec) {
+            throw std::runtime_error("dmp cache: AUTOC_DMP_CACHE=" + c.dir +
+                                     " cannot be created: " + ec.message());
+        }
+        std::cerr << "dmp cache: " << c.dir << "\n";
+        return c;
+    }();
+    return cfg;
+}
+
+std::string dmpCachePath(const DmpCacheConfig& cfg, const std::string& bucket,
+                         const std::string& key) {
+    if (key.empty() || key.front() == '/' || key.find("..") != std::string::npos ||
+        bucket.empty() || bucket.find('/') != std::string::npos) {
+        throw std::runtime_error("dmp cache: refusing unsafe bucket/key: " + bucket + "/" + key);
+    }
+    return (fs::path(cfg.dir) / bucket / key).string();
+}
+
+std::string dmpFetchBlobCached(const DmpCacheConfig& cfg, const std::string& bucket,
+                               const std::string& key,
+                               const std::function<std::string()>& fetchRaw) {
+    if (!cfg.enabled()) return inflateIfZstd(key, fetchRaw());
+
+    const fs::path p = dmpCachePath(cfg, bucket, key);
+    std::error_code ec;
+    if (fs::is_regular_file(p, ec)) {
+        std::ifstream in(p, std::ios::binary);
+        if (!in) throw std::runtime_error("dmp cache: cannot read " + p.string());
+        const std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        try {
+            return inflateIfZstd(key, raw);
+        } catch (const std::exception& e) {
+            throw std::runtime_error("dmp cache: corrupt entry " + p.string() + " (" + e.what() +
+                                     "); delete it to re-fetch from s3://" + bucket + "/" + key);
+        }
+    }
+
+    const std::string raw = fetchRaw();
+    std::string blob;
+    try {
+        blob = inflateIfZstd(key, raw);  // validate BEFORE caching: a bad object never lands
+    } catch (const std::exception& e) {
+        throw std::runtime_error("dmp fetch: s3://" + bucket + "/" + key + " failed to inflate (" +
+                                 e.what() + ")");
+    }
+    dmpCacheWriteAtomic(p, raw);
+    return blob;
+}
+
 std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                          const std::string& key) {
-    Aws::S3::Model::GetObjectRequest req;
-    req.SetBucket(bucket);
-    req.SetKey(key);
-    auto outcome = s3.GetObject(req);
-    if (!outcome.IsSuccess()) {
-        throw std::runtime_error("S3 GetObject failed for s3://" + bucket + "/" + key +
-                                 ": " + outcome.GetError().GetMessage());
-    }
-    std::ostringstream oss;
-    oss << outcome.GetResult().GetBody().rdbuf();
-    std::string body = oss.str();
-    return isZstdKey(key) ? zstdDecompress(body) : body;  // FR-P09 inflate legacy-safe
+    return dmpFetchBlobCached(dmpCacheConfigFromEnv(), bucket, key, [&]() -> std::string {
+        Aws::S3::Model::GetObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+        auto outcome = s3.GetObject(req);
+        if (!outcome.IsSuccess()) {
+            throw std::runtime_error("S3 GetObject failed for s3://" + bucket + "/" + key +
+                                     ": " + outcome.GetError().GetMessage());
+        }
+        std::ostringstream oss;
+        oss << outcome.GetResult().GetBody().rdbuf();
+        return oss.str();
+    });
 }
 
 void s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,

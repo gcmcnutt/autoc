@@ -7,6 +7,7 @@
 // discriminator (M1/M2/eval each own bucket), so the same code finds runs in
 // any bucket. The `tracker-` run-id prefix (T033) is retired.
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -53,8 +54,43 @@ std::vector<std::string> listRunGenKeys(const Aws::S3::S3Client& s3, const std::
 // Compress/inflate + tag live here so autoc.cc, source_dmp_loader, nnextractor,
 // and renderer all leverage the same code (no per-site zstd/get/put boilerplate).
 
+// --- 045 F1: local dmp cache (specs/045-m2-tracking/contracts/dmp-cache.md) --
+// A read-through cache in front of the archive, so reports on the training box
+// stop re-downloading dmps (S3 egress). S3 stays the record. An entry holds the
+// bytes exactly as stored in S3 (compressed for ".zst" keys) at
+// <dir>/<bucket>/<key>. Enabled only by AUTOC_DMP_CACHE. A cache that cannot be
+// written, or an entry that fails to inflate, throws naming the path; there is
+// no silent fall-back to S3 (Constitution VII). Keys are unique per run + gen
+// and never rewritten, so there is no invalidation.
+struct DmpCacheConfig {
+    std::string dir;  // empty ⇒ disabled ({} is the "off" value)
+    bool enabled() const { return !dir.empty(); }
+};
+
+// Parse the value of AUTOC_DMP_CACHE: nullptr or "" ⇒ disabled.
+DmpCacheConfig dmpCacheConfigFromEnvValue(const char* value);
+
+// The process-wide config: reads AUTOC_DMP_CACHE once and logs it once to stderr
+// ("dmp cache: <dir>" or "dmp cache: disabled (AUTOC_DMP_CACHE unset)"). stderr,
+// because the reports parse the tools' stdout. A set but uncreatable dir throws.
+const DmpCacheConfig& dmpCacheConfigFromEnv();
+
+// <dir>/<bucket>/<key>. Throws on a key that is absolute or contains "..".
+std::string dmpCachePath(const DmpCacheConfig& cfg, const std::string& bucket,
+                         const std::string& key);
+
+// Read-through fetch of one dmp, returning the inflated cereal blob.
+// Disabled ⇒ fetchRaw() every time. Hit ⇒ read the entry (corrupt ⇒ throw naming
+// the path; fetchRaw() is not called). Miss ⇒ fetchRaw() once, inflate it (a bad
+// archive object throws and is NOT cached), then store it (tmp + rename) and
+// return it. `fetchRaw` returns the object's bytes as stored in S3.
+std::string dmpFetchBlobCached(const DmpCacheConfig& cfg, const std::string& bucket,
+                               const std::string& key,
+                               const std::function<std::string()>& fetchRaw);
+
 // Download bucket/key and return the raw cereal blob, inflating if key ends
-// ".zst" (FR-P09). Fail-loud: throws std::runtime_error on S3 error (read path).
+// ".zst" (FR-P09), through the local dmp cache when AUTOC_DMP_CACHE is set (045 F1).
+// Fail-loud: throws std::runtime_error on S3 error (read path) and on cache errors.
 std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                          const std::string& key);
 

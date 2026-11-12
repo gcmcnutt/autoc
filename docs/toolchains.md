@@ -33,6 +33,21 @@ Keep this current when a toolchain, host, or invocation path changes.
 
 - S3 per-mode buckets `autoc-m1` / `autoc-m2` / `autoc-eval`; milestone-preserve prefixes per auto-memory
   `reference_autoc_storage_keeper_runs`.
+- **Local dmp cache on the training box** (045 F1, `specs/045-m2-tracking/contracts/dmp-cache.md`). S3 egress was the largest
+  item on the bill (Oct 2026: 378 GB): the reports re-downloaded every dmp 2–7 times. Set `AUTOC_DMP_CACHE=<dir>` in the
+  training box's login environment, so `scripts/train.sh` and `scripts/generate_pngs.sh` and every tool they spawn inherit it.
+  It is an env var, not a flag, because the Python reports spawn `dmp-dump` / `nnextractor`.
+  - Every dmp GET goes through `s3GetDmpBlob`. A hit reads `<dir>/<bucket>/<key>`; a miss downloads once and fills the cache.
+    S3 stays the record and is still written immediately, so other hosts can read any gen at once.
+  - Entries are the compressed bytes exactly as in S3, written tmp + rename. Keys are unique per run + gen, so there is no
+    invalidation.
+  - Fail-loud: a dir that cannot be created or written, or an entry that fails to inflate, stops the tool with the path named.
+    Delete a corrupt entry to re-fetch it. Unset ⇒ one `dmp cache: disabled` line on stderr and today's behaviour.
+  - Rebuilding `dmp-dump` changes `generate_pngs.sh`'s DSIG cache key, so the next report pass re-reads the current run once
+    (from the cache if it is already filled).
+  - Size: one 800-gen M1 run is ~40 GB. Eviction: `scripts/dmp_cache_sweep.sh` (dry-run by default) drops `retain=expire` runs
+    older than 30 days and never touches `retain=keep`.
+  - LIST calls (`listAll`, renderer listings) still go to S3; they are small.
 
 ## Notes
 

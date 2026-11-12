@@ -17,6 +17,8 @@ flight-results/**/*.01.csv
 flight-results/**/*.01.gps.csv
 flight-results/**/*.01.gps.gpx
 flight-results/**/*.01.event
+# Decoded xiao flight logs: regenerable from the tracked .bin (decoder per version tag: 045 MANIFEST § Preservation).
+flight-results/**/flight_log_*.csv
 nn_weights.dat
 nohup.out
 core.*

@@ -57,7 +57,7 @@ is outside this pass.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `specs/045-m2-tracking/MANIFEST.md` with § Starting point, § Preservation, § Change sets, § Builds, § Gates and
+- [X] T001 Create `specs/045-m2-tracking/MANIFEST.md` with § Starting point, § Preservation, § Change sets, § Builds, § Gates and
   § Safety ladder. Later tasks append keys, tags, hashes, build results and verdicts to it
 - [ ] T002 (operator) Starting-point build gate on the branch head, recorded in `specs/045-m2-tracking/MANIFEST.md` § Starting
   point: clean `bash scripts/rebuild-perf.sh`; `cd build && ctest` (R15 saw 55/55 at fb4d3ba; record the actual count);
@@ -65,12 +65,13 @@ is outside this pass.
   git hash of the xiao build flown on 11-08, which T062 diffs against. No hash was recorded at the time. The candidate is `78e7d6e`
   (2026-11-07), the last `xiao/` commit before the flight; nothing under `xiao/src` or `xiao/include` has changed since. Confirm
   it against the build line in the boot banner (T034)
-- [ ] T003 [P] Decode the existing xiao logs for N1. `flight-results/flight-20261108/flight_log_2026-11-09T00-14-08_flight_001.bin`
+- [X] T003 [P] Decode the existing xiao logs for N1. `flight-results/flight-20261108/flight_log_2026-11-09T00-14-08_flight_001.bin`
   (header: v6) goes through today's `src/analytics/flightlog_decode.py -o` into a `.csv` beside it. Both
   `flight-results/flight-20261018/flight_log_*.bin` (v5) go through the decoder from tag `043-final` (`git show
-  043-final:src/analytics/flightlog_decode.py`, run from the scratchpad). Commit the CSVs. Record in MANIFEST § Preservation which
-  tag reads which version: `044-final` → v6, `043-final` → v5
-- [ ] T004 [P] Confirm the flight baseline of record. `specs/044-m1-craft-history/artifacts-t1/nn_weights-t1-g800.dat` must be
+  043-final:src/analytics/flightlog_decode.py`, run from the scratchpad). The CSVs are regenerable, so they are **not** committed
+  (`.gitignore`, per the 2026-10-04 rule for decoded flight artifacts). Record in MANIFEST § Preservation which tag reads which
+  version (`044-final` → v6, `043-final` → v5) and the regeneration commands
+- [X] T004 [P] Confirm the flight baseline of record. `specs/044-m1-craft-history/artifacts-t1/nn_weights-t1-g800.dat` must be
   genome `a5ed3521ea1e70b7`. In `autoc-m1`, `autoc-9223370244339188361-2026-10-20T16:59:47.446Z/gen9200.dmp.zst` (gen 800: dmp
   names encode 10000 − gen), gen 1 and the last gen must carry `retain=keep` (`aws s3api get-object-tagging`). Record in MANIFEST
   § Preservation
@@ -88,7 +89,7 @@ the training box of keys it wrote itself.
 
 ### Step 1: read-through (fill on miss)
 
-- [ ] T005 [US1] Test first, in the already-registered `tests/s3_run_selector_tests.cc` (no CMake edit, so US1 merges alone).
+- [X] T005 [US1] Test first, in the already-registered `tests/s3_run_selector_tests.cc` (no CMake edit, so US1 merges alone).
   Test a read API with an injectable fetch, e.g. `autoc::dmpCacheFetch(const DmpCacheConfig&, bucket, key,
   std::function<std::string()> fetchRaw)`, on a temp dir:
   - hit ⇒ `fetchRaw` is not called;
@@ -98,17 +99,17 @@ the training box of keys it wrote itself.
   - a fill into an unwritable dir ⇒ throws with the path in `what()`;
   - a corrupt entry (bad zstd) ⇒ throws with the path, with no re-fetch;
   - disabled ⇒ always fetches, writes nothing
-- [ ] T006 [US1] Implement it in `include/autoc/util/s3_run_selector.h` + `src/util/s3_run_selector.cc`:
+- [X] T006 [US1] Implement it in `include/autoc/util/s3_run_selector.h` + `src/util/s3_run_selector.cc`:
   - read `AUTOC_DMP_CACHE` once (function-local static) and log it once per process (`dmp cache: disabled (AUTOC_DMP_CACHE
     unset)` or `dmp cache: <dir>`);
   - `s3GetDmpBlob` (~line 126) checks the cache before the GET, and caches the compressed body before inflating.
 
   T005 passes
-- [ ] T007 [P] [US1] Document `AUTOC_DMP_CACHE` in `docs/toolchains.md` § training box: its purpose, the dir, the one-time full
+- [X] T007 [P] [US1] Document `AUTOC_DMP_CACHE` in `docs/toolchains.md` § training box: its purpose, the dir, the one-time full
   re-read after `dmp-dump` is rebuilt (the DSIG cache key in `generate_pngs.sh` changes), and the sweep (T012). `scripts/train.sh`
   and `scripts/generate_pngs.sh` print the effective value at start. The operator sets it in the training box's login environment
   (it is an env var because the Python reports spawn the tools, research R1)
-- [ ] T008 [US1] Incremental build + ctest. Then check the failure modes by hand (AS2 / AS3): a truncated cached entry ⇒ `dmp-dump`
+- [X] T008 [US1] Incremental build + ctest. Then check the failure modes by hand (AS2 / AS3): a truncated cached entry ⇒ `dmp-dump`
   stops naming the path; an unwritable dir ⇒ the fill stops naming the path; unset ⇒ the one-line notice and today's behaviour
 - [ ] T009 [US1] (operator) Mini run A, read-through. Create `specs/045-m2-tracking/cache-smoke.ini` (a copy of
   `specs/044-m1-craft-history/smoke.ini` with `NumberOfGenerations = 10`). Run `scripts/train.sh
