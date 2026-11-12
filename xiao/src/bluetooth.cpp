@@ -1,4 +1,5 @@
 #include <main.h>
+#include <utility/ATT.h>  // 045 F2: ATT.mtu() / ATT.connected() for the MTU instrumentation
 
 BLEService ledService("19B10000-E8F2-537E-4F6C-D104768A1214"); // Bluetooth® Low Energy LED Service
 
@@ -23,6 +24,37 @@ static bool transferInProgress = false;
 static bool bluetoothEnabled = true;
 static uint32_t downloadCrc = 0;
 static uint32_t downloadTotalBytes = 0;
+
+// 045 F2 step 1 — download instrumentation (contracts/ble-download-v2.md). Protocol unchanged; these only measure.
+static uint32_t dlChunks = 0;            // chunks sent this download
+static uint32_t dlShortWrites = 0;       // notifies whose returned length < bytes read (ATT truncation to MTU-3, or no subscriber)
+static int dlLastSentLen = -1;           // returned length of the most recent short notify
+static unsigned long dlMaxLoopMs = 0;    // longest gap between blueToothLoop() calls while downloading (main-loop stalls)
+static unsigned long dlMaxNextGapMs = 0; // longest gap between NEXT requests
+static unsigned long dlLastLoopMs = 0;
+static unsigned long dlLastNextMs = 0;
+static unsigned long dlStartMs = 0;
+
+// The negotiated ATT MTU of the connected central. ArduinoBLE exposes MTU only by connection handle, so scan the low
+// handles (Cordio allocates them from 0). 0 = no connected handle found.
+static uint16_t currentAttMtu() {
+  for (uint16_t h = 0; h < 16; h++) {
+    if (ATT.connected(h)) return ATT.mtu(h);
+  }
+  return 0;
+}
+
+static void dlResetStats() {
+  dlChunks = 0; dlShortWrites = 0; dlLastSentLen = -1;
+  dlMaxLoopMs = 0; dlMaxNextGapMs = 0;
+  dlLastLoopMs = dlLastNextMs = dlStartMs = millis();
+}
+
+// STAT:<offset>:<short_writes>:<max_loop_ms>:<max_next_gap_ms>
+static void dlFormatStat(char* buf, size_t n) {
+  snprintf(buf, n, "STAT:%lu:%lu:%lu:%lu", (unsigned long)downloadTotalBytes, (unsigned long)dlShortWrites,
+           dlMaxLoopMs, dlMaxNextGapMs);
+}
 
 // Reboot state for non-blocking reboot after erase
 static unsigned long rebootScheduledTime = 0;
@@ -54,6 +86,9 @@ void blueToothSetup()
 
   // set advertised local name and service UUID:
   BLE.setLocalName("XIAO-GP");
+  // 045 F2: also the GAP device name, which BlueZ caches after a connection (it was the default "Arduino", so the page's
+  // name filter missed the device on a host that had connected before).
+  BLE.setDeviceName("XIAO-GP");
   BLE.setAdvertisedService(ledService);
 
   // add the characteristic to the LED service
@@ -168,7 +203,11 @@ static void processLoggerCommand(const char* cmd) {
       char statusMsg[64];
       snprintf(statusMsg, sizeof(statusMsg), "READY:%lu:%d", (unsigned long)filteredSize, FLASH_LOGGER_CHUNK_SIZE);
       statusCharacteristic.writeValue(statusMsg);
-      logPrint(INFO, "Download ready: %s (%lu bytes)", filename, (unsigned long)filteredSize);
+      dlResetStats();
+      char mtuMsg[24];
+      snprintf(mtuMsg, sizeof(mtuMsg), "MTU:%u", (unsigned)currentAttMtu());
+      statusCharacteristic.writeValue(mtuMsg);
+      logPrint(INFO, "Download ready: %s (%lu bytes), %s", filename, (unsigned long)filteredSize, mtuMsg);
       // Wait for browser to request chunks with NEXT commands
     } else {
       statusCharacteristic.writeValue("ERROR:Cannot start download");
@@ -178,6 +217,9 @@ static void processLoggerCommand(const char* cmd) {
   } else if (strncmp(cmd, "NEXT", 4) == 0) {
     // Browser requests next chunk
     if (transferInProgress) {
+      const unsigned long now = millis();
+      if (now - dlLastNextMs > dlMaxNextGapMs) dlMaxNextGapMs = now - dlLastNextMs;
+      dlLastNextMs = now;
       transferNextChunk();
     }
 
@@ -215,10 +257,15 @@ static void transferNextChunk() {
     // Complete - finalize CRC and send with status
     uint32_t finalCrc = downloadCrc ^ 0xFFFFFFFF;
     char statusMsg[64];
-    snprintf(statusMsg, sizeof(statusMsg), "DOWNLOAD_DONE:%08lX:%lu",
-             (unsigned long)finalCrc, (unsigned long)downloadTotalBytes);
-    logPrint(INFO, "Download complete: %lu bytes, CRC %08lX",
-             (unsigned long)downloadTotalBytes, (unsigned long)finalCrc);
+    char stat[48];
+    dlFormatStat(stat, sizeof(stat));
+    // DOWNLOAD_DONE:<crc>:<bytes>:<STAT fields> — the page reads fields 1 and 2; the rest is instrumentation.
+    snprintf(statusMsg, sizeof(statusMsg), "DOWNLOAD_DONE:%08lX:%lu:%s",
+             (unsigned long)finalCrc, (unsigned long)downloadTotalBytes, stat);
+    const unsigned long ms = millis() - dlStartMs;
+    logPrint(INFO, "Download complete: %lu bytes, CRC %08lX, %lu chunks in %lu ms (%lu B/s), %s, last short len %d",
+             (unsigned long)downloadTotalBytes, (unsigned long)finalCrc, (unsigned long)dlChunks, ms,
+             ms ? (unsigned long)(downloadTotalBytes * 1000UL / ms) : 0UL, stat, dlLastSentLen);
     statusCharacteristic.writeValue(statusMsg);
     flashLoggerStopDownload();
     transferInProgress = false;
@@ -229,7 +276,17 @@ static void transferNextChunk() {
   downloadCrc = crc32Update(downloadCrc, transferBuffer, bytesRead);
   downloadTotalBytes += bytesRead;
   // Send chunk via notification (no delay - pure sync request-response)
-  dataCharacteristic.writeValue(transferBuffer, bytesRead);
+  const int sent = dataCharacteristic.writeValue(transferBuffer, bytesRead);
+  dlChunks++;
+  if (sent != bytesRead) {  // 045 F2: measure truncation; step 2 makes this fail loud (ERR:SHORT_NOTIFY)
+    dlShortWrites++;
+    dlLastSentLen = sent;
+  }
+  if (dlChunks % 16 == 0) {
+    char stat[48];
+    dlFormatStat(stat, sizeof(stat));
+    statusCharacteristic.writeValue(stat);
+  }
 }
 
 // Non-blocking polling loop for BT work
@@ -243,13 +300,20 @@ void blueToothLoop()
     NVIC_SystemReset();
   }
 
+  // 045 F2: main-loop period while a download runs (a blocking MSP poll shows up here)
+  if (transferInProgress) {
+    const unsigned long now = millis();
+    if (now - dlLastLoopMs > dlMaxLoopMs) dlMaxLoopMs = now - dlLastLoopMs;
+    dlLastLoopMs = now;
+  }
+
   // Get current central
   BLEDevice central = BLE.central();
 
   // Check for new connection
   if (central && !wasConnected)
   {
-    logPrint(DEBUG, "Connected to central: %s", central.address());
+    logPrint(INFO, "Connected to central: %s, MTU %u", central.address().c_str(), (unsigned)currentAttMtu());
     lastCentral = central;
     wasConnected = true;
   }
@@ -287,8 +351,71 @@ void blueToothLoop()
 
     // Clean up any in-progress transfer
     if (transferInProgress) {
+      char stat[48];
+      dlFormatStat(stat, sizeof(stat));
+      logPrint(WARNING, "Disconnected mid-download after %lu ms: %s", millis() - dlStartMs, stat);
       flashLoggerStopDownload();
       transferInProgress = false;
+    }
+  }
+}
+
+// --- 045 F2: wired log read over the USB serial console ----------------------------------------------------------------
+// The byte reference for checking a BLE download (tasks.md T016), and a field fallback with a laptop.
+//   LIST          -> "FILE:<name>:<size>" lines, then "LIST_DONE"
+//   DUMP:<name>   -> "DUMP_BEGIN:<name>:<size>\n", <size> raw bytes, "\nDUMP_END:<crc32 hex>:<bytes>\n"
+// Refused while armed, or while a BLE download holds the flash. The dump is one tight loop (no logPrint inside it), so no
+// console text can land in the binary stream; it feeds the watchdog per chunk. specs/045-m2-tracking/xiao_serial_dump.py
+// is the host side.
+static void serialDump(const char* filename) {
+  if (state.isArmed()) { Serial.println("DUMP_ERR:armed"); return; }
+  if (transferInProgress) { Serial.println("DUMP_ERR:ble download in progress"); return; }
+  if (!flashLoggerStartDownload(filename)) { Serial.println("DUMP_ERR:cannot start (unknown file or flash busy)"); return; }
+  const uint32_t size = flashLoggerGetActiveDownloadSize();
+  Serial.print("DUMP_BEGIN:"); Serial.print(filename); Serial.print(":"); Serial.println((unsigned long)size);
+  Serial.flush();
+  static uint8_t buf[FLASH_LOGGER_CHUNK_SIZE];
+  uint32_t crc = 0xFFFFFFFF, total = 0;
+  for (;;) {
+    const int n = flashLoggerReadChunk(buf, sizeof(buf));
+    if (n < 0) { flashLoggerStopDownload(); Serial.print("\nDUMP_ERR:read failed at "); Serial.println((unsigned long)total); return; }
+    if (n == 0) break;
+    crc = crc32Update(crc, buf, n);
+    total += n;
+    Serial.write(buf, n);
+    faultGuardFeed();
+  }
+  flashLoggerStopDownload();
+  char tail[48];
+  snprintf(tail, sizeof(tail), "\nDUMP_END:%08lX:%lu", (unsigned long)(crc ^ 0xFFFFFFFF), (unsigned long)total);
+  Serial.println(tail);
+  Serial.flush();
+}
+
+void serialConsoleLoop() {
+  static char line[64];
+  static size_t len = 0;
+  while (Serial.available() > 0) {
+    const int c = Serial.read();
+    if (c < 0) break;
+    if (c == '\r') continue;
+    if (c != '\n') {
+      if (len < sizeof(line) - 1) line[len++] = (char)c;
+      continue;
+    }
+    line[len] = '\0';
+    len = 0;
+    if (strcmp(line, "LIST") == 0) {
+      const int count = flashLoggerGetFileCount();
+      for (int i = 0; i < count; i++) {
+        Serial.print("FILE:"); Serial.print(flashLoggerGetFileName(i)); Serial.print(":");
+        Serial.println((unsigned long)flashLoggerGetFileSize(i));
+      }
+      Serial.println("LIST_DONE");
+    } else if (strncmp(line, "DUMP:", 5) == 0) {
+      serialDump(line + 5);
+    } else if (line[0] != '\0') {
+      Serial.print("CONSOLE_ERR:unknown command: "); Serial.println(line);
     }
   }
 }

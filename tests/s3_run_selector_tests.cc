@@ -209,3 +209,33 @@ TEST_F(DmpCache, CorruptS3ObjectIsNotCached) {
     EXPECT_THROW(autoc::dmpFetchBlobCached(cfg, bucket, key, fetcher()), std::runtime_error);
     EXPECT_FALSE(fs::exists(autoc::dmpCachePath(cfg, bucket, key)));
 }
+
+// --- 045 F1 / US1 T010 — write-through (dmpCacheStore, used by s3PutDmpBlob) --
+
+TEST_F(DmpCache, StoreWritesEntryAndFetchThenHits) {
+    autoc::dmpCacheStore(cfg, bucket, key, raw);
+    const fs::path p = autoc::dmpCachePath(cfg, bucket, key);
+    ASSERT_TRUE(fs::exists(p));
+    EXPECT_EQ(slurp(p), raw);
+    EXPECT_EQ(autoc::dmpFetchBlobCached(cfg, bucket, key, fetcher()), blob);
+    EXPECT_EQ(calls, 0);  // a run's own dmps never leave the archive again
+    int entries = 0;
+    for (const auto& e : fs::directory_iterator(p.parent_path())) { ++entries; (void)e; }
+    EXPECT_EQ(entries, 1);  // tmp + rename: no tmp file left behind
+}
+
+TEST_F(DmpCache, StoreUnwritableThrowsNamingPath) {
+    spit(root / "a-regular-file", "x");
+    cfg.dir = (root / "a-regular-file" / "cache").string();
+    try {
+        autoc::dmpCacheStore(cfg, bucket, key, raw);
+        FAIL() << "expected a throw when the cache cannot be written";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find(cfg.dir), std::string::npos) << e.what();
+    }
+}
+
+TEST_F(DmpCache, StoreDisabledWritesNothing) {
+    autoc::dmpCacheStore(autoc::DmpCacheConfig{}, bucket, key, raw);
+    EXPECT_FALSE(fs::exists(cfg.dir));
+}

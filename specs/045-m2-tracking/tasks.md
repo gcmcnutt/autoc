@@ -120,12 +120,12 @@ the training box of keys it wrote itself.
 
 ### Step 2: write-through
 
-- [ ] T010 [US1] Test first, in `tests/s3_run_selector_tests.cc`: `autoc::dmpCacheStore(const DmpCacheConfig&, bucket, key, const
+- [X] T010 [US1] Test first, in `tests/s3_run_selector_tests.cc`: `autoc::dmpCacheStore(const DmpCacheConfig&, bucket, key, const
   std::string& compressed)` writes tmp + rename to `<dir>/<bucket>/<key>`, a following fetch hits without calling `fetchRaw`, an
   unwritable dir throws with the path, and disabled writes nothing
-- [ ] T011 [US1] `s3PutDmpBlob` (~line 142) writes the compressed bytes through `dmpCacheStore` after a successful put. A
+- [X] T011 [US1] `s3PutDmpBlob` (~line 142) writes the compressed bytes through `dmpCacheStore` after a successful put. A
   cache-write failure throws with the path: the run must not silently lose its cache. T010 passes
-- [ ] T012 [P] [US1] `scripts/dmp_cache_sweep.sh -d <dir> [--apply]`, dry-run by default. For each run prefix under
+- [X] T012 [P] [US1] `scripts/dmp_cache_sweep.sh -d <dir> [--apply]`, dry-run by default. For each run prefix under
   `<dir>/<bucket>/`, read the retain tag of one object (`aws s3api get-object-tagging`). Delete the local entries of
   `retain=expire` runs older than 30 days. Never touch `retain=keep`. Print what it removes or would remove
 - [ ] T013 [US1] (operator) Mini run B, write-through = SC-001: the same mini run as T009 (`logs/autoc-045-t0-cache-smoke-b.log`),
@@ -146,19 +146,19 @@ on *disarmed and downloading*.
 
 ### Step 1: measure first (FR-005: the cause is recorded before it is fixed)
 
-- [ ] T014 [US2] Firmware instrumentation in `xiao/src/bluetooth.cpp`, protocol unchanged:
+- [X] T014 [US2] Firmware instrumentation in `xiao/src/bluetooth.cpp`, protocol unchanged:
   - status `MTU:<att_mtu>` at connect (`ATT.mtu(handle)`);
   - compare `writeValue`'s returned length with the bytes read (~line 232) and count short writes;
   - track the maximum `loop()` duration and the maximum gap between `NEXT`s;
   - status `STAT:<offset>:<short_writes>:<max_loop_ms>:<max_next_gap_ms>` every 16 chunks, and appended to `DOWNLOAD_DONE`;
   - `BLE.setDeviceName("XIAO-GP")`, so BlueZ stops caching the name "Arduino"
-- [ ] T015 [US2] Page instrumentation in `xiao/web/flight_logger.html`:
+- [X] T015 [US2] Page instrumentation in `xiao/web/flight_logger.html`:
   - an in-memory log with a **Copy log** button;
   - READY t0; per chunk the send time, receive time, `byteLength` against the expected chunk, and offset;
   - errors with name and offset; the disconnect offset and elapsed time;
   - a summary (bytes, s, kB/s, CRC result);
   - the device filter also matches the service UUID `F1706000-…`
-- [ ] T016 [US2] A wired path, which the xiao lacks today. It is the byte reference for the comparison, and a field fallback with a
+- [X] T016 [US2] A wired path, which the xiao lacks today. It is the byte reference for the comparison, and a field fallback with a
   laptop. Add a USB-serial `DUMP:<file>` console command (raw bytes framed with size + CRC32; refused while armed) and
   `specs/045-m2-tracking/xiao_serial_dump.py` to capture it
 - [ ] T017 [US2] (operator) The measurement of record (quickstart § 8 steps 1–2, checklist F1). Build gate first: `pio run -e

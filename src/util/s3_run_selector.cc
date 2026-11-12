@@ -237,6 +237,12 @@ std::string dmpFetchBlobCached(const DmpCacheConfig& cfg, const std::string& buc
     return blob;
 }
 
+void dmpCacheStore(const DmpCacheConfig& cfg, const std::string& bucket,
+                   const std::string& key, const std::string& raw) {
+    if (!cfg.enabled()) return;
+    dmpCacheWriteAtomic(dmpCachePath(cfg, bucket, key), raw);
+}
+
 std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                          const std::string& key) {
     return dmpFetchBlobCached(dmpCacheConfigFromEnv(), bucket, key, [&]() -> std::string {
@@ -256,8 +262,9 @@ std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
 
 void s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                   const std::string& key, const std::string& blob) {
+    const std::string compressed = zstdCompress(blob);  // FR-P09
     auto stream = Aws::MakeShared<Aws::StringStream>("s3PutDmpBlob");
-    *stream << zstdCompress(blob);  // FR-P09
+    *stream << compressed;
     Aws::S3::Model::PutObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
@@ -268,6 +275,8 @@ void s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
         throw std::runtime_error("S3 PutObject failed for s3://" + bucket + "/" + key +
                                  ": " + outcome.GetError().GetMessage());
     }
+    // 045 F1 write-through, only after the archive (the record) has the object.
+    dmpCacheStore(dmpCacheConfigFromEnv(), bucket, key, compressed);
 }
 
 }  // namespace autoc

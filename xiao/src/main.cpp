@@ -43,6 +43,7 @@ void loop()
 
   heartBeatLED();
   blueToothLoop();
+  serialConsoleLoop();
 
   controllerUpdate();
 

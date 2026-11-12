@@ -91,6 +91,8 @@ void heartBeatLED();
 void blueToothSetup();
 void blueToothLoop();
 void blueToothSetEnabled(bool enabled);
+// 045 F2: USB-serial console commands (LIST, DUMP:<file>) — the wired log read; disarmed only.
+void serialConsoleLoop();
 
 // GP rabbit path following functions
 void convertMSPStateToAircraftState(AircraftState& aircraftState);

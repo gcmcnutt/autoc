@@ -61,6 +61,23 @@ unset ⇒ `dmp cache: disabled (AUTOC_DMP_CACHE unset)` on stderr; miss ⇒ 3.3 
 hit ⇒ 0.49 s; a truncated entry ⇒ `rc=1`, `dmp cache: corrupt entry <path> (zstd decompress failed …)`, no re-fetch; an
 uncreatable dir ⇒ `rc=1`, `dmp cache: AUTOC_DMP_CACHE=<path> cannot be created: Not a directory`.
 
+| date | task | what | result |
+|---|---|---|---|
+| 2026-11-12 | T010–T012 | US1 write-through (`s3PutDmpBlob` → `dmpCacheStore` after a successful put) + `scripts/dmp_cache_sweep.sh` | incremental build + ctest **55 / 55**; `s3_run_selector_tests` 20 / 20; sweep dry-run/apply checked on fake entries (pinned run kept, gone-from-S3 run + stale tmp removed) |
+| 2026-11-12 | T014–T016 | US2 step 1: firmware instrumentation (`MTU:`, `STAT:`, short-notify count, loop / NEXT gaps, GAP device name), page instrumentation + **Copy log**, USB-serial `LIST` / `DUMP:<file>` + `xiao_serial_dump.py` | xiao `pio run` SUCCESS, RAM 53.7 % (127 588 B), flash 45.9 % (372 620 B); page JS `node --check` OK. ⏳ not flashed (operator, T017) |
+
+**US1 mini run A (T009, read-through)**: `logs/autoc-045-t0-cache-smoke-a.log`, run `autoc-9223370242347031545-2026-11-12T18:22:24.262Z`
+(10 gens, ~20 s/gen, dmps ~13.8 MB). `AUTOC_DMP_CACHE=~/autoc-dmp-cache`. Report pass 1: 32 s, filled 10 entries (138.1 MB).
+Pass 2 with `--no-cache` (every dmp re-read): 19 s, the cache byte-identical before and after ⇒ every read a local hit, zero
+GETs by construction. ⏳ External confirmation from the S3 access logs: `s3_egress_check.py --profile <admin> --run <run-id>
+--day 2026-11-12` (the training box's `autoc-generator` user cannot read `autoc-s3-access-logs`).
+
+**US1 mini run B (T013, write-through = SC-001's local half)**: `logs/autoc-045-t0-cache-smoke-b.log`, run
+`autoc-9223370242346471150-2026-11-12T18:31:44.657Z`, trained with `AUTOC_DMP_CACHE` set. Training wrote all 10 entries through.
+Report pass 1 (25 s) and pass 2 with `--no-cache` (19 s) left the cache byte-identical ⇒ **zero fetches of the run's own dmps**.
+⏳ The access-log confirmation and the month-end egress (T113) are the operator's. Sweep on the real cache: `--days 30` keeps both
+runs (fresh `retain=expire`); `--days 0` (dry run) would remove both (20 files, 0.28 GB).
+
 ## § Gates
 
 *(G1 T061, G2 T068, US6 decision T069, G3, G4.)*

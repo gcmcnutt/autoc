@@ -88,6 +88,12 @@ std::string dmpFetchBlobCached(const DmpCacheConfig& cfg, const std::string& buc
                                const std::string& key,
                                const std::function<std::string()>& fetchRaw);
 
+// Write-through: store `raw` (the bytes exactly as just written to S3) as the
+// entry for bucket/key, tmp + rename. Disabled ⇒ no-op. Throws naming the path
+// if the entry cannot be written.
+void dmpCacheStore(const DmpCacheConfig& cfg, const std::string& bucket,
+                   const std::string& key, const std::string& raw);
+
 // Download bucket/key and return the raw cereal blob, inflating if key ends
 // ".zst" (FR-P09), through the local dmp cache when AUTOC_DMP_CACHE is set (045 F1).
 // Fail-loud: throws std::runtime_error on S3 error (read path) and on cache errors.
@@ -99,7 +105,9 @@ std::string s3GetDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
 // reap it. Needs IAM s3:PutObject + s3:PutObjectTagging (the tag rides the same
 // PutObject). Fail-loud: throws std::runtime_error on any S3 error — no
 // warn-and-continue (Constitution VII). Milestone runs are re-tagged
-// retain=keep out-of-band.
+// retain=keep out-of-band. With AUTOC_DMP_CACHE set, the same compressed bytes
+// are then written through to the local cache (045 F1); a cache-write failure
+// after a successful put also throws, naming the path.
 void s3PutDmpBlob(const Aws::S3::S3Client& s3, const std::string& bucket,
                   const std::string& key, const std::string& blob);
 
