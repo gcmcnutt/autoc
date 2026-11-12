@@ -92,6 +92,9 @@ mount mode.
 
 ### Decision
 
+> 2026-11-12: the flight rate is set by the write bandwidth (possibly 1:32 with MAG + NAV_ACC), so (b) below is unlikely; the
+> mount survey is bench-only.
+
 The committed logs **cannot measure mount resonances**. Measure them with (a) a bench motor run-up per article with the blackbox at
 a high rate (denominator 1–2), and (b) the re-fly logged at a higher rate if write bandwidth allows. The operator noted on
 2026-10-04 that write bandwidth is limited, so trim the logged field groups to fit: [quickstart.md](quickstart.md) § Mount
@@ -366,6 +369,14 @@ blocking MSP request (50 ms timeout), non-blocking QSPI logging, BLE (stopped at
 - The xiao hard-codes box bit positions ARM = 0 and FAILSAFE = 19 (`xiao/include/MSP.h:77,96`), but the bitmask is ordered by the
   *configured* boxes (`fc_msp_box.c:468`). *(inf.)* A mode added or removed in the config can silently shift them.
 
+✔ **Verified in source 2026-11-12 (RC9 escape)**: `calculateRxChannelsAndUpdateFailsafe` (`rx/rx.c` ~442–512) fills the channels
+from the receiver, then merges the MSP values only `if (IS_RC_MODE_ACTIVE(BOXMSPRCOVERRIDE) && !mspOverrideIsInFailsafe())`. The
+override box's own aux channel is removed from the override mask (`mspOverrideCtrlChannels`, `rx/msp_override.c:99,219`), so the
+companion can never hold RC9. The box is re-evaluated in `updateActivatedModes()` (`fc/fc_core.c:669`) just after the channel
+calculation (`:634`), so the hand-back takes about one RX frame. ⇒ **With the TX link up, RC9 off is an INAV-side escape that works
+whatever the xiao is doing**, including a xiao that rebooted and re-engaged by itself (R18). Without the link, RC9 is frozen at its
+last good value and the receiver-failsafe path applies (R17).
+
 **Decision**:
 1. **Before the re-fly** (class D, no fork change): correct the xiao comment and the pilot brief. The escape is RC9 override-off,
    then MANUAL. Bench-verify in [quickstart.md](quickstart.md) that RC9-off passes the pilot's sticks through immediately while
@@ -392,7 +403,7 @@ blocking MSP request (50 ms timeout), non-blocking QSPI logging, BLE (stopped at
   loop, denom 8). Nav fields refresh at 50 Hz and repeat. **Not logged**: accWeight (only under `debug_mode = VIBE`, which costs the
   debug slots), the accel bias, `posEstimator.flags`. NAV_ACC, MAG and QUAT groups are off.
 
-**Decision**:
+**Decision** *(N3 companion side deferred 2026-11-12: flagged offline from the blackbox instead; B1 stands)*:
 - **N3 (state message, INAV fork + xiao)**: append to the state message: `est_eph` (u16 cm), `est_epv` (u16 cm), `est_flags` (u8:
   XY valid, Z valid, GPS-XY valid, GPS-Z valid, baro valid), `gps_numsat` (u8), `gps_fix` (u8), `acc_weight` (u8, ×100) and
   `gps_age_ms` (u16, since the last GPS update). That is 10 bytes, 64 → 74. The xiao derives *frozen* (velocity exactly zero and
@@ -498,6 +509,10 @@ valid estimate); RC6 MANUAL / ANGLE (**not available** while overridden).
 
 ### Required behaviour — proposals (operator decisions)
 
+> ⚠️ **Staged (operator 2026-11-12, spec § Clarifications)**: nothing below flies on the re-fly. The changes form a ladder after
+> it, one per step, each bench-proven and flown on a happy-path flight before the next; R-3 starts with a measurement. The "when"
+> column records the 2026-11-11 answer.
+
 | # | requirement | proposal | when |
 |---|---|---|---|
 | B-1 | a stop must not hold a turning command | on every `stopAutoc`, the xiao sends **neutral rate frames** (roll = pitch = 1500 ⇒ zero rate, "stop rotating"; **throttle minimum ⇒ motor stop**, per the operator's throttle-to-0 principle). ⚠️ Zero rate *holds the current attitude* (it may be inverted or vertical). The operator's first goal is only "no continued powered flight"; the surface behaviour is a separate, per-attitude decision (spec FR-015b (2), R17) until the override times out, so the 1.4 s window holds wings-steady instead of the last command. INAV cannot shorten the override timeout separately from `failsafe_delay` | before the re-fly |
@@ -580,7 +595,7 @@ still sending when the link returns, control goes back to the companion. B-5 (th
 | R-6 | **transmitter-side re-arm** (operator's earlier approach: EdgeTX global variable / logical switch that re-asserts arm when motion is detected) | fast re-arm after a TX reboot | transmitter configuration; it interacts with R-1 (with LAND the aircraft stays armed, so less is needed) |
 | R-7 | `reboot_character` / CLI exposure on the companion's UART: the fork skips non-MSP evaluation on that port even when disarmed | belt-and-braces with R-3 | small fork change |
 
-**Operator decisions 2026-11-11**: R-4 (FC watchdog) + R-7 **before the re-fly**; `failsafe_delay` bench-tested at **5** (R-2); DROP stays for
+**Operator decisions 2026-11-11** *(staged after the re-fly on 2026-11-12, see R16 note)*: R-4 (FC watchdog) + R-7 **before the re-fly**; `failsafe_delay` bench-tested at **5** (R-2); DROP stays for
 now (R-1 LAND bench-tested in RAM); and **re-enabling after a failsafe must take fewer pilot actions** (today: throttle 0, disarm, arm,
 throttle), which favours LAND (armed throughout, control back on stick motion) and needs a re-arm path designed against an action
 count. Original recommendation for the re-fly: **R-2 + R-3 now** (config + xiao). **R-1** bench-tested on the bench and,

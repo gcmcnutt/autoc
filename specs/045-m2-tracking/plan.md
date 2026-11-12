@@ -5,9 +5,10 @@
 
 ## Summary
 
-The first implementation pass ends at the **re-fly gate (G2)**: fly 044-t1 g800 on a corrected, recorded INAV configuration, with
-advisory estimator-fault flags in every tick and the companion's own inertial frame running in shadow. Before that come two front
-tasks, the dmp cache and a BLE downloader that works. Then, after G2: field-measured camera geometry, a perfect-signal M2 simulator,
+The first implementation pass ends at the **re-fly gate (G2)**: fly 044-t1 g800 on a corrected, recorded INAV configuration
+(hardened all-attitude flight, more satellites, a better blackbox), with estimator faults flagged offline from the blackbox. Before
+that come two front tasks, the dmp cache and a BLE downloader that works. After G2: the shadow IMU and the safety ladder, each
+structural change on its own flight (§ Revision 2026-11-12). Then, after G2: field-measured camera geometry, a perfect-signal M2 simulator,
 and a simulation-only "does M2 work at all" run.
 
 Research changed the picture in five places:
@@ -19,6 +20,23 @@ Research changed the picture in five places:
   protocol with no recovery (R2).
 - The MANUAL switch is on an **overridden channel**. The pilot escape is the RC9 override switch, not MANUAL (R8).
 - The committed logs cannot show mount resonances; they are aliased at 240 Hz (R7).
+
+### Revision 2026-11-12 (operator tasks review; spec § Clarifications 2026-11-12 governs)
+
+- **N3 companion side deferred.** State message v2, flight log v7 fields and per-tick fault flags are not built before the re-fly.
+  The blackbox already carries the signals; US5 is met by B1 + an offline flag tool (`nav_span_scan.py` blackbox mode). The two
+  contracts stay as the design of record. A log change now comes only with the shadow record, if US6 is adopted.
+- **Safety staged.** Before the re-fly: the bench "before" record, the fault timelines, the ANGLE trace and the pilot brief (no
+  behaviour change). The B-1 … B-5, B-2a, R-3, R-4 and R-7 changes become a **ladder after the re-fly, one change per step**, each
+  bench-proven and flown on a happy-path flight. R-3 starts with a measurement. There is no INAV fork change before the re-fly, so
+  the re-fly's INAV build surface is configuration only.
+- **F1 split.** Read-through first, write-through second, each checked with a mini run.
+- **US6 after the re-fly** (N4): decided with US3's numbers plus the re-fly data, and flown as its own step. The re-fly tests
+  hardened all-attitude flight, better blackbox and the improved field download.
+- **Blackbox rate**: write bandwidth may force 1:32 with MAG + NAV_ACC on. Gyro-only propagation at 62.5 Hz is coarse (R4 sampling
+  term), so the re-fly's drift analysis leans on the GPS specific-force reference. Mount survey stays bench-only (R7).
+- **Pilot escape confirmed in source**: RC9 off ⇒ INAV stops merging MSP channels within about one RX frame, whatever the xiao does
+  (R8 note).
 
 ## Technical Context
 
@@ -33,10 +51,10 @@ INAV blackbox (SPI flash)
 **Target Platform**: Linux training box (DGX Spark), xiao nRF52840 BLE Sense, MATEKF722MINI (article 1) and HGLRCF722LITE (article 2)
 flight controllers, Android/desktop Chrome (Web Bluetooth)
 **Project Type**: multi-surface embedded + simulation + training pipeline
-**Performance Goals**: SC-001 zero self-written dmp GETs per report cycle; SC-002 ~300 kB log in < 60 s; shadow frame at 416 Hz
+**Performance Goals**: SC-001 zero self-written dmp GETs per report cycle; SC-002 ~300 kB log in < 60 s; shadow frame (after G2) at 416 Hz
 (208 Hz fallback) within ~3 % xiao CPU, without disturbing the 20 Hz tick (p95 21.6 ms, 0 overruns today)
 **Constraints**: g800 must fly unchanged on the re-fly (no class A / B delay changes, FR-017); xiao log budget nearly full
-(~47 KB slack in v6); INAV fork changes are limited to the state message before G2; training is detached via `scripts/train.sh`
+(~47 KB slack in v6); no INAV fork change before G2 (configuration only); training is detached via `scripts/train.sh`
 (Constitution IX); the operator drives `rebuild-perf.sh` and the regression gate
 **Scale/Scope**: 4 build surfaces (autoc/crrcsim, xiao, web page, INAV fork); 2 articles; 1 flight before G2; 1 M2 smoke and 1 M2
 training run after G2
@@ -49,9 +67,9 @@ training run after G2
 |---|---|---|
 | I Testing-first | dmp cache (unit + integration with a temp dir), log v7 round-trip fixture, state-message decode test, perfect-signal switch test, the input-domain script on a fixture | PASS: tests named in the design |
 | II Build stability | autoc `rebuild.sh`, xiao `pio run -e xiaoblesense_arduinocore_mbed`, INAV target builds for MATEKF722MINI + HGLRCF722LITE | PASS: gates per surface |
-| III No compatibility shims | log v7 and state-message v2 are clean cuts: every consumer updated, old readers refuse new data (R9 consumer list) | PASS |
+| III No compatibility shims | log v7 (shadow record, after G2, if US6 is adopted) is a clean cut: every consumer updated, old readers refuse new data (R9 consumer list). State-message v2 deferred | PASS |
 | IV Unified build | new test registrations and the v7 fixture touch `CMakeLists.txt` ⇒ clean `rebuild-perf.sh`, operator-driven | PASS (flagged in tasks) |
-| V Versioned persistence | xiao log v6 → v7; the state message changes length (versioned by size check + a version byte); dmp schema **unchanged** (no cereal bump, per project practice) | PASS |
+| V Versioned persistence | xiao log v6 → v7 only with the US6 shadow record; dmp schema **unchanged** (the post-G2 signal mode goes to the log + as-run ini, not the dmp: R13 / data-model) | PASS |
 | VI Type-domain | new sim code (perfect-signal switch) uses gp_scalar; raw-ok annotations at byte-format boundaries | PASS |
 | VII No silent fallback | `AUTOC_DMP_CACHE` unset ⇒ logged once, no cache; set but unwritable / corrupt ⇒ fail loud. The perfect-signal mode is an explicit ini key with no default and is logged at startup | PASS |
 | VIII Artifact lifecycle | 044-t1 already `retain=keep` 800/800; cache eviction follows retain classes; the M2 run is tagged per policy | PASS |
@@ -127,20 +145,21 @@ else edits in place.
   change set per article**, each setting read back after reboot. Bench and outdoor steps in quickstart.
 - **N6** (FR-010): the reduced-role design written into research R8 (done); the pre-re-fly items are the MANUAL / escape
   correction, the box-bit check and the pilot brief.
-- **N3 + B1** (US5): [contracts/msp-autoc-state-v2.md](contracts/msp-autoc-state-v2.md) +
-  [contracts/flight-log-v7.md](contracts/flight-log-v7.md); blackbox MAG + NAV_ACC on. Bench-verified with the satellite-block test
-  (outdoor).
-- **N4** (US6, shadow): `imu_local` at 416 Hz FIFO; an error-state filter (attitude, velocity, position, gyro bias; GPS velocity
-  update at 10 Hz from the state message; no resets inside a span; GPS innovation gating with a coast). Engage handover propagates
+- **N3 + B1** (US5): *(revised 2026-11-12)* blackbox MAG + NAV_ACC on, `debug_mode VIBE` kept for accWeight, the rate set by the
+  write bandwidth (possibly 1:32); faults flagged offline by `nav_span_scan.py` blackbox mode. The companion side
+  ([contracts/msp-autoc-state-v2.md](contracts/msp-autoc-state-v2.md), the tick fields of
+  [contracts/flight-log-v7.md](contracts/flight-log-v7.md)) is deferred. Bench-verified with the satellite-block test (outdoor).
+- **N4** (US6, shadow; *after G2, its own flight*, 2026-11-12): `imu_local` at 416 Hz FIFO; an error-state filter (attitude, velocity, position, gyro bias; GPS velocity
+  update at 10 Hz from the existing state message; no resets inside a span; GPS innovation gating with a coast). Engage handover propagates
   INAV's state forward with a gyro ring buffer. Logged at 20 Hz in the ShadowStateRecord. **Replay-first**: the same filter code is
   built for desktop and run against recorded data (`imu_shadow_replay.py` drives it on the blackbox IMU) before it flies. Board
-  orientation from a static + rotation calibration on the bench. **Adopt / narrow / defer is decided at G1** with N1's numbers.
+  orientation from a static + rotation calibration on the bench. **Adopt / narrow / defer is decided after the re-fly** with N1's numbers and the re-fly data.
   If deferred, the driver and logging may still fly to collect raw xiao-IMU data.
 - **N5**: specified, not built before G2 (phase 4 runs on perfect navigation state, per clarify).
 
 ### 1 — re-fly (G2)
 
-Quickstart § Re-fly card (research R11). Analysis: 11-08 tools + N3 flags + shadow-frame comparison + configuration effect.
+Quickstart § Re-fly card (research R11). Analysis: 11-08 tools + the offline blackbox flags + configuration effect. No safety change and no shadow frame fly on it.
 
 ### 2–4 — after G2 (readiness-level design; revised in a post-G2 plan update)
 
@@ -160,8 +179,8 @@ Quickstart § Re-fly card (research R11). Analysis: 11-08 tools + N3 flags + sha
 | Article 1's receiver can't do multi-GNSS | class C's main fix lost | firmware check / swap a receiver from stock (FR-008) |
 | `init_gyro_cal = OFF` with a stale zero | gyro bias on the re-fly | re-record zero each session (quickstart) |
 | Raising `inav_max_eph_epv` hides faults from INAV's own validity | RTH trusts a worse estimate | N3 logs EPH regardless; RTH is not the escape (R8); value pinned from N1 |
-| Log v7 overflows the flash budget | lost ticks | data-model budget: fewer ticks per session + erase per session |
-| Shadow IMU drain starves the 20 Hz tick | control-loop overrun | FIFO + small batches; measured overrun gate on the bench before flight |
+| Log v7 overflows the flash budget (only if US6 lands) | lost ticks | data-model budget: fewer ticks per session + erase per session |
+| Shadow IMU drain starves the 20 Hz tick (after G2) | control-loop overrun | FIFO + small batches; measured overrun gate on the bench before flight |
 | GPS_ONLY with poor EPV | worse Z | only if bench multi-GNSS EPV ≤ ~5 m; else stay on GPS |
 
 ## Complexity Tracking

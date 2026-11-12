@@ -21,6 +21,9 @@ article, level reference** (flat wing bottom) and **conditions** (outdoor, away 
 
 ## Estimator fault flags (FR-011, FR-012) — per xiao tick, advisory only
 
+> ⏸ Per-tick companion flags deferred (spec § Clarifications 2026-11-12). The same conditions are flagged offline from the blackbox
+> by `nav_span_scan.py`; the FROZEN / STEP definitions below apply to that tool.
+
 | field | type | source |
 |---|---|---|
 | `est_eph`, `est_epv` | u16 cm | INAV `posEstimator.est.eph/epv` (state message v2) |
@@ -57,6 +60,8 @@ DISARMED ──arm──▶ ARMED_IDLE ──engage──▶ HANDOVER ──(rin
 
 ## Flight log v7 budget (xiao QSPI, 2 MB log region)
 
+> ⏸ Tick fields deferred (2026-11-12). If only the ShadowStateRecord lands: 148 + 31 = 179 B/tick.
+
 | record | v6 bytes | v7 bytes | rate |
 |---|---|---|---|
 | TickRecord (N = 53 inputs) | 148 | **158** (+ the 10 B of estimator fields + `fault_flags`) | 20 Hz while engaged |
@@ -85,7 +90,8 @@ Per parameter or variation: name, value, unit, source (measurement id or bench-j
 ## Signal mode (FR-020a) — after G2
 
 Ini key `TrackerSignalMode = PERFECT | REALISTIC`. **No default**: a missing key fails at startup (Constitution VII). Logged at
-startup and recorded in the run's dmp metadata. `PERFECT` forces TRACKING / q = 9 / no CDMA penalty / no emission-darkness gate /
+startup and recorded in the run's as-run ini, **not in the dmp**: `source_dmp_loader` deserializes the whole `EvalResults` with
+cereal, so a schema change would orphan the `retain=keep` 044-t1 tracker source (FR-026; analyze U1, 2026-11-12). `PERFECT` forces TRACKING / q = 9 / no CDMA penalty / no emission-darkness gate /
 no 100 m cutoff for any beacon passing the geometry gates.
 
 ## M2 performance result (FR-024) — after G2

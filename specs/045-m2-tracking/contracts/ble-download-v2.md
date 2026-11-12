@@ -29,4 +29,4 @@ Rules:
 - While a download runs **on the ground (disarmed)**, `controllerUpdate` skips MSP polling. Arming still stops BLE as today.
 - Whole-file CRC32 is still checked at the end.
 
-Acceptance: spec SC-002 (~300 kB < 60 s at field distance; an interrupted download resumes and is byte-identical to a wired read).
+Acceptance: spec SC-002 (~300 kB < 60 s with the phone ~3 m from the aircraft; an interrupted download resumes and is byte-identical to a wired read).

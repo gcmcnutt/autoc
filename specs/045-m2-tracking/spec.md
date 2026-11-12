@@ -53,8 +53,12 @@ variation and lens assumption built in 040 against the field data, and records w
   not what the hardware's signal costs (operator 2026-11-10). Realistic signal is a later run (phase 5).
 - **The first implementation pass ends at the re-fly gate** (G2). Phases 3–5 are specified now and planned and implemented after it.
 - **Safety is formalized pre-work in this feature** (operator 2026-11-11): the fault-behaviour work (spec FR-015a/b, research
-  R16–R18) is an add-on to 045's goals, done in Phase 0 and proven by simulated-fault bench tests (bench-checklist § H) before the
-  re-fly. Intentional in-flight fault testing waits for a large open site.
+  R16–R18) is an add-on to 045's goals, proven by simulated-fault bench tests (bench-checklist § H). Intentional in-flight fault
+  testing waits for a large open site. ⚠️ **Staged, 2026-11-12**: the analysis, bench "before" record and pilot brief come before
+  the re-fly. The changes themselves form a **safety ladder after the re-fly, one change per step**, each bench-proven and flown on
+  a happy-path flight before the next. The re-fly carries no structural safety change.
+- **Scope of the pre-work** (operator 2026-11-12): clean up the platform for visual tracking, with a diversion to re-fly M1 on
+  improved alignment and INAV sampling and tuning. The rest of the feature dusts off M2 training runs.
 - Article 2 flies only if it is ready and the weather allows. Its absence does not block the gate.
 
 ---
@@ -64,8 +68,10 @@ variation and lens assumption built in 040 against the field data, and records w
 | phase | content | stories | exits through |
 |---|---|---|---|
 | **0a — front tasks** | write-through dmp cache; fast, resumable BLE log download | US1, US2 | — (independent; may merge alone) |
-| **0b — pre-tasks** | measure nav/attitude drift offline; review INAV configuration for all-attitude flight and define INAV's role during autoc; advisory fault detection plus additional blackbox fields; companion inertial frame and simulator parity (adopt or defer) | US3, US4, US5, US6 | **G1 — re-fly readiness** |
+| **0b — pre-tasks** | measure nav/attitude drift offline; review INAV configuration for all-attitude flight and define INAV's role during autoc; fault visibility from the blackbox (additional fields + offline flags); safety analysis, bench "before" record and pilot brief (no behaviour change) | US3, US4, US5, US7 | **G1 — re-fly readiness** |
 | **1 — re-fly** | fly 044-t1 g800 on the Phase 0 configuration; article 2 in the same window if possible | US7 | **G2 — re-fly gate** (end of first implementation pass) |
+| **1b — safety ladder** | the FR-015a changes, one per step: bench before / after, then a happy-path flight, then the next step. Runs alongside phases 2–4 (they need no flights) | US7 | per step |
+| **1c — shadow IMU** | companion inertial frame and simulator parity: decided after the re-fly with US3's numbers and the re-fly data; if adopted, it flies as its own step (2026-11-12) | US6 | — |
 | **2 — camera update** | bring the field-measured camera geometry into the simulator; review every 040 camera variation and the lens model against the field data; record the signal measurements for later; list the remaining model gaps for the hardware side | US8 | **G3 — camera parameters landed** |
 | **3 — M2 sim + training config** | current camera architecture; perfect-signal mode; quick input-domain check (all inputs), rescale only where forced | US9 | **G4 — M2 smoke green** |
 | **4 — M2 training run** | simulation-only, perfect signal: does M2 work at all | US10 | feature outcome |
@@ -74,7 +80,8 @@ variation and lens assumption built in 040 against the field data, and records w
 - **G1 (re-fly readiness):** US3 reported, with the attitude-stability budget; US4's configuration change set (including the
   calibration policy and compass alignment) recorded, read back and on the aircraft; INAV's reduced-role design written (built after
   G2); accelerometer calibration, board alignment and outdoor compass calibration done and recorded per article (FR-007b); US5
-  verified on the bench; US6 adopted (shadow on the re-fly) or explicitly deferred with US3's numbers.
+  verified on the bench (blackbox side); US2 verified on the bench (SC-002's bench half); US6 is not on the re-fly (decided after it, 2026-11-12); the safety "before" record, fault
+  timelines and pilot brief written, and **no structural safety change** on the re-fly (2026-11-12).
 - **G2 (re-fly gate):** the re-fly is flown and analysed (SC-006, SC-007). Nothing in phases 2–4 starts before G2.
 - **G3:** no M2 training starts against the pre-field-work camera model (the README's Gate 1).
 - **G4:** the M2 smoke passes on the updated simulator before the full run.
@@ -99,7 +106,8 @@ variation and lens assumption built in 040 against the field data, and records w
 ### Session 2026-11-10 (clarify)
 
 - Q: If the companion inertial frame (US6) is adopted at G1, does the policy fly on it during the re-fly? → A: **Shadow.** It runs
-  and is logged next to INAV's estimate, and g800 keeps flying on INAV. Plan/research also estimates the attitude drift of the
+  and is logged next to INAV's estimate, and g800 keeps flying on INAV. *(2026-11-12: US6 flies after the re-fly, as its own
+  step; the shadow principle stands.)* Plan/research also estimates the attitude drift of the
   candidate sources under the measured flight load, as the attitude-stability budget (target < 1° over a span) (FR-006a).
 - Q: Formal normalization changes M1's shared inputs — re-bake M1, or not? → A: Keep M1 inputs roughly the same. Do a quick
   domain-stats check of every input from the latest training and the latest flight; aim for roughly the same range as a secondary
@@ -147,6 +155,36 @@ variation and lens assumption built in 040 against the field data, and records w
   each board has its own resonances and its alignment is approximate. The re-fly prep takes a more serious pass at rough
   accelerometer calibration, board alignment and outdoor compass calibration (FR-007b).
 
+### Session 2026-11-12 (tasks review, operator)
+
+- Q: Companion-side estimator and safety logging (state message v2, flight log v7, per-tick fault flags)? → A: **Deferred.** The
+  blackbox already records these signals (navEPH/EPV, navFlags, numSat, failsafe phase, flight modes; accWeight through
+  `debug_mode = VIBE`), so the upside is small, and the change is a structural one to proven firmware. US5 is met from the
+  blackbox: the B1 fields plus offline flags. The two contracts stay as the design of record for a later step.
+- Q: Which safety changes fly on the re-fly? → A: **None structural. Little steps.** The happy path is proven in flight, and
+  structural changes invalidate that. How to set INAV's failsafe is still being debated. A flight carrying many safety changes at
+  once is the wrong stance. Before the re-fly: the bench "before" record, the fault timelines, the ANGLE trace and the pilot brief,
+  none of which changes behaviour. After it: the FR-015a changes as a **ladder, one change per step**, each bench-proven before and
+  after and flown on a happy-path flight before the next. The MSP traffic caps (R-3) start with a measurement of today's traffic,
+  and are added only where it shows a need. This supersedes the 2026-11-11 "before the re-fly" answers for B-1 … B-5, B-2a, R-4
+  and R-7.
+- dmp cache (US1): done first and on its own, **read-through first, then write-through**, each checked with a mini run.
+- BLE download (US2): get it working. The wired USB dump is wanted, both for verification and as a fallback.
+- Q (analyze A2): what is "field distance" in SC-002? → A: **~3 m**, the phone beside the aircraft after landing.
+- Q (analyze I6): does G1 require US2? → A: **Yes.** The re-fly waits for BLE v2 to pass on the bench (SC-002).
+- Q (analyze A1): how long is the B-1 neutral hold (ladder L4)? → A: **≥ 3 ticks, then quiet.** Going quiet is what makes INAV
+  take control back when the frames stop, so INAV holds the neutral command until its override times out, then hands the sticks to
+  the pilot. Holding neutral until RC9 is flipped would leave the aircraft with the companion until the pilot acts.
+- **What the re-fly tests** (operator): hardened all-attitude flight on the improved alignment and calibration, flown through
+  attitude with nav dead-reckoning errors present; fewer dropouts with more satellites; better blackbox; improved field download.
+  The shadow IMU (US6) comes after the re-fly.
+- Blackbox rate: write bandwidth on the controller may force **1:32** (62.5 Hz) once MAG + NAV_ACC are on. Pick the fastest
+  denominator with no dropped frames. Mount resonances stay a bench-only measurement at a high rate.
+- Q: The xiao can re-engage by itself after a reboot today (R18). Change it before the re-fly? → A: **No, leave the xiao alone.**
+  With the TX link up, the pilot's RC9 override-off makes INAV take over whatever the xiao does (verified in the fork:
+  `rx/rx.c` merges MSP channels only while the override box is active, and the box's own switch channel is never overridable,
+  `rx/msp_override.c:99,219`). The pilot brief carries it.
+
 ---
 
 ## User Scenarios & Testing *(mandatory)*
@@ -186,7 +224,8 @@ wired read.
 
 **Acceptance Scenarios**:
 
-1. **Given** a ~300 kB flight log, **When** the operator downloads it with the companion and phone at field distance, **Then** it
+1. **Given** a ~300 kB flight log, **When** the operator downloads it with the companion and phone ~3 m apart (phone beside the
+   aircraft after landing), **Then** it
    completes in under 60 s.
 2. **Given** a download interrupted at any point, **When** the operator reconnects, **Then** it continues from the last confirmed
    position and the final file matches the source byte for byte.
@@ -242,26 +281,27 @@ The change set is reviewable against the configuration of record.
 
 ### User Story 5 — Estimator faults are visible in every log, and nothing else changes (Priority: P1, phase 0b)
 
-Every companion log tick says whether INAV's position and altitude estimates were valid, how uncertain they were, and whether the
-estimate was frozen or stepped on that tick. The blackbox carries the estimator fields the drift analysis currently has to infer.
-Flight behaviour is unchanged.
+Every flight's blackbox shows whether INAV's position and altitude estimates were valid, how uncertain they were, and whether the
+estimate was frozen or stepped. The blackbox carries the estimator fields the drift analysis currently has to infer, and an offline
+tool flags the faulted intervals. Flight behaviour is unchanged. *(Revised 2026-11-12: met from the blackbox. The per-tick companion
+flags are deferred; see Clarifications.)*
 
 **Why this priority**: the 11-08 fault went unnoticed until analysis days later. The re-fly must carry this.
 
-**Independent Test**: on the bench, block the satellite receiver mid-run. The ticks are flagged and the companion keeps flying the
-policy exactly as before.
+**Independent Test**: on the bench, block the satellite receiver mid-run. The offline tool flags the interval in the blackbox, and
+the companion keeps flying the policy exactly as before.
 
 **Acceptance Scenarios**:
 
 1. **Given** a bench run, **When** satellite reception is blocked, **Then** the affected ticks are flagged invalid or frozen, and on
    restore a step is flagged.
 2. **Given** a flagged tick, **When** the companion runs the policy, **Then** engagement, disengagement and outputs are unaffected.
-3. **Given** a flight log with flagged spans, **When** the flight gates and bench-join tools run, **Then** they list those spans
-   automatically.
+3. **Given** a flight log with flagged spans, **When** the flight-analysis tools run, **Then** they list those spans automatically
+   and can exclude them (`nav_span_scan.py` blackbox mode emits the `flight_gates.py --drop` list).
 
 ---
 
-### User Story 6 — A span-local inertial frame owned by the companion, and the simulator matches it (Priority: P2, phase 0b — adopt or defer)
+### User Story 6 — A span-local inertial frame owned by the companion, and the simulator matches it (Priority: P2, after the re-fly — adopt or defer)
 
 At engage, the companion takes INAV's state once, then carries attitude, velocity and position forward on its own inertial sensor
 at sensor rate. It is continuous and gravity-correct, and it never resets inside a span. Satellite position is a soft cross-check.
@@ -275,9 +315,9 @@ budget, with no discontinuities.
 
 **Acceptance Scenarios**:
 
-1. **Given** US3's report and the attitude-stability budget, **When** G1 is assessed, **Then** this story is either adopted or
+1. **Given** US3's report and the attitude-stability budget, **When** it is decided after the re-fly, **Then** this story is either adopted or
    deferred, with the numbers that justify the choice.
-2. **Given** it is adopted, **When** the re-fly flies, **Then** the frame runs in shadow: logged next to INAV's estimate for the
+2. **Given** it is adopted, **When** the flight that carries it flies, **Then** the frame runs in shadow: logged next to INAV's estimate for the
    same spans, with the policy still flying on INAV.
 3. **Given** it is adopted, **When** a span is propagated, **Then** the frame has no discontinuity anywhere in the span.
 4. **Given** the policy flies on an estimator other than perfect state, **When** it is trained or evaluated, **Then** the simulator
@@ -471,21 +511,25 @@ values.
   flies its existing role on the FR-007 configuration tuned for this use case: estimator error bounds, sample rates, the barometer's
   role, satellite constellations and the calibration policy, plus fallback and gate settings that change neither the rate loop nor
   what the policy observes.
-- **FR-011**: The state stream from the controller MUST carry the estimator's position and altitude validity and uncertainty. The
-  companion MUST flag every tick that is invalid, frozen or stepped.
+- **FR-011** *(deferred 2026-11-12)*: The state stream from the controller MUST carry the estimator's position and altitude
+  validity and uncertainty. The companion MUST flag every tick that is invalid, frozen or stepped. Until it lands, an offline tool
+  flags the same conditions from the blackbox.
 - **FR-012**: Fault flags MUST NOT change engagement, disengagement or policy outputs.
 - **FR-013**: The flight-analysis tools MUST list flagged spans automatically and MUST be able to exclude them.
 - **FR-014**: The blackbox MUST record the estimator fields the drift analysis needs: at least the navigation position and velocity
   estimate and its validity, uncertainty, fusion weight and satellite count.
-- **FR-015**: A decision MUST be recorded at G1 on the companion-owned span-local inertial frame (adopt, narrow or defer), citing
+- **FR-015**: A decision MUST be recorded after the re-fly on the companion-owned span-local inertial frame (adopt, narrow or defer), citing
   FR-006's and FR-006a's numbers. If adopted, the frame MUST be continuous through a span with no internal resets, and the simulator
-  MUST give the policy that estimator's measured errors before any training run that relies on it. **On the re-fly it runs in
-  shadow**: computed and logged next to INAV's estimate, never fed to the policy.
+  MUST give the policy that estimator's measured errors before any training run that relies on it. **It runs in shadow**: computed
+  and logged next to INAV's estimate, never fed to the policy. It does not fly on the re-fly; if adopted, it flies as its own step after
+  it (operator 2026-11-12).
 
 ### Functional Requirements — phase 1 (re-fly)
 
-- **FR-015a**: Before the re-fly, the companion MUST:
-  - send zero-rate, **minimum-throttle** frames on every stop until INAV's override times out;
+- **FR-015a**: The companion MUST, as **steps of the safety ladder after the re-fly** (2026-11-12: one change per step, each
+  bench-proven before and after and flown on a happy-path flight before the next; none flies on the re-fly):
+  - on every stop, send zero-rate, **minimum-throttle** frames for at least 3 ticks, then go quiet, so that INAV holds this neutral
+    command (not the last policy command) until its override times out and hands control to the pilot;
   - identify INAV's mode bits by permanent id, failing loud if they are missing;
   - run a control-loop watchdog;
   - stop and log on receiver failsafe (research R16 B-1, B-3, B-4, B-5).
@@ -505,15 +549,16 @@ values.
     justified from the traced behaviour before any change from today's;
   - recovery as fast as the configuration allows;
   - an **in-flight re-arm path** that is designed and bench-tested;
-  - the companion **rate-limits its own MSP traffic**, so a misbehaving companion cannot load the flight controller.
-  - **a flight-controller watchdog** (fork change, before the re-fly), so an INAV hang resets with the motor off instead of freezing
+  - the companion's MSP traffic is **measured against the R-3 caps**, and a guard is added only on a path that can exceed them
+    (2026-11-12), so a misbehaving companion cannot load the flight controller;
+  - **a flight-controller watchdog** (fork change, a ladder step after the re-fly), so an INAV hang resets with the motor off instead of freezing
     the surfaces with the motor running; and the companion's UART ignores non-MSP bytes (R17 R-4, R-7);
   - **minimal pilot actions to regain control after a failsafe**: the candidate procedures (DROP vs LAND) and re-arm paths are
     compared on the number and kind of actions the pilot needs once the link returns, as well as on time;
   - `failsafe_delay` bench-tested at **5** first.
   Intentional in-flight fault testing is out of scope for this feature's flights; it needs a large open site (research R17).
-- **FR-016**: The re-fly MUST fly 044-t1 g800 on the configuration recorded under FR-007, with the policy on INAV's estimate. Any
-  companion frame (FR-015) runs in shadow only.
+- **FR-016**: The re-fly MUST fly 044-t1 g800 on the configuration recorded under FR-007, with the policy on INAV's estimate. No
+  companion frame flies on the re-fly (FR-015; 2026-11-12).
 - **FR-017**: For the re-fly, settings in the rate loop, and settings that change observation delay, MUST be held at the
   configuration of record. The exception is a setting whose change the simulator models first, with g800 re-evaluated on it.
   Changes that only improve estimate accuracy are allowed.
@@ -565,7 +610,8 @@ values.
 
 - **Configuration change set**: an ordered set of controller settings, each with its class, evidence, read-back and effect on what
   the policy was trained on. One per flight.
-- **Estimator fault flag**: per tick: position and altitude validity, uncertainty, and frozen or stepped. Advisory only.
+- **Estimator fault flag**: per engaged span, derived offline from the blackbox: position and altitude validity, uncertainty, and
+  frozen or stepped. Advisory only. (Per-tick companion flags deferred 2026-11-12.)
 - **Drift report**: per span and per source: attitude, velocity and position drift over the span.
 - **Span-local inertial frame**: the companion's own state estimate, from engage to disengage. Continuous, with no internal resets.
 - **Camera parameter record**: each simulator camera value and per-scenario variation with its measurement source (or a
@@ -588,20 +634,22 @@ values.
 
 - **SC-001**: For one full report cycle on a run trained with the cache, the training box downloads zero artefacts it wrote itself,
   and at most one copy of anything else. The month's egress stays inside the free tier (100 GB).
-- **SC-002**: A ~300 kB flight log downloads in under 60 s at field distance. An interrupted download resumes and completes
+- **SC-002**: A ~300 kB flight log downloads in under 60 s with the phone ~3 m from the aircraft. An interrupted download resumes and completes
   byte-identical.
 - **SC-003**: The drift report exists for every engaged span of 11-08 and 10-18. It reproduces from committed tools and names the
   better attitude source in high-load manoeuvres. The attitude-stability budget states, for each candidate source, whether < 1°
   over a span is reachable under the measured load.
-- **SC-003a** *(if US6 is adopted)*: On the re-fly, the shadow frame is logged for 100 % of engaged ticks, and its attitude drift per
+- **SC-003a** *(if US6 is adopted)*: On the flight that carries it, the shadow frame is logged for 100 % of engaged ticks, and its attitude drift per
   span is reported against the budget and against INAV's.
 - **SC-004**: 100 % of changed controller settings have a class, evidence and a post-reboot read-back on record. Article 1's
   receiver model and constellations are recorded.
-- **SC-005**: In a bench run with satellite reception blocked, every affected tick is flagged and no flight behaviour changes.
+- **SC-005**: In a bench run with satellite reception blocked, the offline tool flags the affected blackbox interval and no flight
+  behaviour changes.
 
 **Re-fly (G2)**
 
-- **SC-006**: The re-fly log carries the fault flags and the added blackbox fields for 100 % of engaged ticks.
+- **SC-006**: The re-fly blackbox carries the added fields for 100 % of engaged time, and the offline flags cover every engaged
+  span.
 - **SC-007**: Engaged spans with a navigation freeze, or a reset larger than 10 m, fall from 11-08's rate (1 of 4 spans) to zero. If
   not, every such fault is flagged and measured and fed into the US6 decision. Either way, the comparison with 11-08 is reported
   with faulted spans excluded.

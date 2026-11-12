@@ -1,5 +1,8 @@
 # Contract: xiao flight log v7
 
+> ⏸ **Deferred (spec § Clarifications 2026-11-12)** for the tick fields. A log change comes only with the ShadowStateRecord, if US6
+> is adopted (then v7 = v6 + that record). Kept as the design of record for the tick fields.
+
 Base: v6 (`xiao/include/flight_log_format.h`, `specs/039-xiao-20hz-flight/contracts/flight-log-format.md`). Changes only:
 
 1. `kFormatVersion` = 7. v5 / v6 decoders **refuse** v7; v7 decoders refuse v5 / v6 (clean cut; the historical scripts keep reading

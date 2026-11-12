@@ -1,5 +1,9 @@
 # Contract: INAV → xiao state message, v2 (`MSP2_INAV_LOCAL_STATE`, 0x210E)
 
+> ⏸ **Deferred (spec § Clarifications 2026-11-12).** Not built before the re-fly; the blackbox carries these signals. Kept as the
+> design of record. If revived, it also needs `failsafe_phase`, receiver-signal flags and box bits 32–63 (MSP RC OVERRIDE is bit 40
+> on article 1), per research R16 B-5 and bench A3.
+
 Producer: INAV fork `autoc` branch, `src/main/fc/fc_msp.c:672-725`. Consumer: xiao `msp_autoc_state_t`
 (`xiao/include/MSP.h:261-283`). Little-endian, packed. **Clean cut** (Constitution III): firmware pairs must match; the xiao
 rejects any other length.

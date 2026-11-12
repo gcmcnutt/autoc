@@ -6,7 +6,7 @@ Disconnect the GPS before flashing an INAV controller (standing project rule).
 
 ## 0. Session checklist (every bench or field session)
 
-1. Erase the xiao log before the session (v7 budget: 7200 engaged ticks ≈ 6 min).
+1. Erase the xiao log before the session (v6 today; the v7 budget applies only once the US6 shadow record lands).
 2. If `init_gyro_cal = OFF` is in force: re-record the gyro zero (§ 3, step 4) at the session's temperature.
 3. `diff all` from each controller, compared against its config of record in the repo. Any difference is a finding.
 
@@ -72,25 +72,28 @@ scale with motor RPM. If the shadow driver is built, also log raw xiao-IMU burst
 1. With autoc engaged (bench test mode): flip **RC9 (MSP RC OVERRIDE) off** ⇒ the pilot's sticks pass through at once (watch the
    servos). This is the escape.
 2. While engaged, flip the MANUAL switch (RC6 low): **it has no effect** (RC6 is overridden). Record this in the pilot brief.
-   Operator decision: move MANUAL to a non-overridden channel, or keep RC9 as the escape (research R8).
+   Decided 2026-11-11: keep MANUAL on RC6; the escape is RC9 off. With the TX link up, INAV stops merging the xiao's channels
+   within about one RX frame, whatever the xiao does (verified in source, research R8).
 3. Stop the xiao (pull its MSP TX): INAV holds the last command ~1.4 s (R16), then passes the pilot's sticks through. Time it.
-4. Box bits: confirm the xiao maps ARM / FAILSAFE / OVERRIDE by permanent id (boot log line), not by fixed index.
+4. Box bits: *(safety ladder L1, after the re-fly)* confirm the xiao maps ARM / FAILSAFE by permanent id (boot log line), not by
+   fixed index. Until L1 lands, record that the xiao's "failsafe" bit 19 is NAV ALTHOLD (bench A3).
 
 ## 7. Satellite-block test (N3, SC-005) — outdoors, props off
 
 1. Outdoors with a 3D fix and ≥ 8 sats; armed in bench test mode, autoc engaged.
 2. Cover the GPS antenna (foil hood or a metal can) for ~15 s, then uncover.
-3. Download the xiao log. Expected: LOW_SATS and GPS_STALE while covered; INVALID_XY after EPH crosses the cap; STEP_XY on
-   reacquire; **no change** in engagement or outputs (the policy keeps running). The blackbox shows the same interval.
+3. Pull the blackbox and run `nav_span_scan.py` in blackbox mode. Expected: sats drop and EPH grows while covered; the estimate
+   freezes once EPH crosses the cap; a step on reacquire; the tool flags each; **no change** in engagement or outputs (the policy
+   keeps running). (Per-tick xiao flags are deferred, spec § Clarifications 2026-11-12.)
 
 ## 8. BLE download, instrumented (F2, R2) — bench, the field phone
 
-1. Flash the instrumented firmware + page (step 1 of the contract). Download a full ~300 kB log at ~3 m and at field distance.
+1. Flash the instrumented firmware + page (step 1 of the contract). Download a full ~300 kB log at ~3 m (the SC-002 distance), plus one pass at a longer range.
 2. **Copy log** → paste it into the session. That is the measurement of record (MTU, per-chunk times, truncation, drop point).
 3. After the v2 protocol lands: repeat; interrupt mid-transfer (walk out of range); reconnect; resume; compare the file with a
    wired read (byte-identical).
 
-## 9. Shadow frame (N4, if adopted) — bench
+## 9. Shadow frame (N4, if adopted; after the re-fly) — bench
 
 1. Static 60 s: attitude drift (bias) and overrun count (0 tick overruns allowed).
 2. 10 slow turns about each axis: shadow attitude vs the turn count (scale-factor check on the xiao IMU).
@@ -102,7 +105,7 @@ scale with motor RPM. If the shadow driver is built, also log raw xiao-IMU burst
 - ≥ 4 engaged spans. Plus **≥ 60 s at altitude in ANGLE or MANUAL**: a box or a circle (≥ 4 course sectors) for the heading check.
 - Optional (operator): MANUAL pitch and roll doublets for the airframe fit.
 - Escape = RC9 override off (§ 6).
-- After landing: the BLE download (the v2 protocol if landed), the blackbox, notes on wind and conditions.
+- After landing: the BLE download (v2 protocol, US2), the blackbox, notes on wind and conditions.
 - Article 2 in the same window if ready: its NOTES fixes (`align_mag_yaw = 3600`, `vbat_scale = 1110`) read back, and § 1–4 done
   for it.
 
