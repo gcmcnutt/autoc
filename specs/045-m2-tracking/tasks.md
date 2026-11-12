@@ -364,11 +364,11 @@ blackbox, and the policy keeps flying exactly as before.
   Record the chosen rate and its cost in `config-changeset-art1.md`. At 62.5 Hz, gyro-only propagation is coarse (R4 sampling
   term; 240 Hz already shows a ~3° floor), so the re-fly's attitude check leans on the GPS specific-force reference. Mount content
   is a bench-only measurement (T040 at denom 1)
-- [ ] T052 [US5] Test first: write `specs/045-m2-tracking/test_nav_flags.py` (plain asserts, `python3` to run) against a committed
+- [X] T052 [US5] Test first: write `specs/045-m2-tracking/test_nav_flags.py` (plain asserts, `python3` to run) against a committed
   blackbox excerpt of 11-08 span 1 (`specs/045-m2-tracking/fixtures/bb_1108_span1.csv`, cut from
   `flight-results/flight-20261108/blackbox_log_2026-11-08_160651.01.csv`). It must flag the 2.3 s freeze and the 105 m reset, and
   a clean excerpt (span 2) must flag nothing
-- [ ] T053 [US5] Extend the T026 blackbox mode of `specs/045-m2-tracking/nav_span_scan.py` into flags per engaged span:
+- [X] T053 [US5] Extend the T026 blackbox mode of `specs/045-m2-tracking/nav_span_scan.py` into flags per engaged span:
   - INVALID: EPH / EPV at or above `inav_max_eph_epv`;
   - FROZEN; STEP_XY / STEP_Z, with the T029 thresholds;
   - LOW_SATS (< 6); GPS frame gaps from the `*.gps.csv`;

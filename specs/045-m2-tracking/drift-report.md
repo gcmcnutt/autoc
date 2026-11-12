@@ -149,7 +149,7 @@ data-model.md):
 | flight · span | fault | time in span | magnitude |
 |---|---|---|---|
 | 11-08 · 1 | LOW_SATS (5 sats, 3D fix kept) | 1.90–3.15 s, 5.40–9.90 s, 10.30–10.40 s | min 5 |
-| 11-08 · 1 | EPH_CAP + INVALID_XY | 7.70–10.05 s (2.35 s) | EPH 10.0 m (the cap) |
+| 11-08 · 1 | INVALID_XY (EPH ≥ cap) + UNTRUSTED_XY | 7.70–10.05 s (2.35 s) | EPH 10.0 m (the cap) |
 | 11-08 · 1 | FROZEN | 7.75–10.05 s (2.30 s) | — |
 | 11-08 · 1 | STEP_XY (reset on reacquire) | 10.05 s | **106.3 m** |
 | 11-08 · 1 | STEP_Z | 15.90 s | **25.4 m** |
@@ -219,4 +219,4 @@ python3 specs/045-m2-tracking/nav_span_scan.py flight-results/flight-20261108/fl
 ```
 
 All three default to every known flight (`--flight 1108 | 1018a | 1018b` to select) and write to `specs/045-m2-tracking/n1/`.
-Options: `--window` / `--max-g` (reference), `--step-xy` / `--step-z` / `--max-eph` (fault thresholds).
+Options: `--window` / `--max-g` (reference), `--step-xy` / `--step-z` / `--eph-cap-cm` (fault thresholds; INVALID = EPH/EPV at or above the cap, UNTRUSTED = INAV's own navFlags). US5's per-span flag summary and `flight_gates.py --drop` arguments: `nav_span_scan.py --blackbox [--bb LOG --xiao CSV] [--eph-cap-cm 3000 for the re-fly]`; test: `python3 specs/045-m2-tracking/test_nav_flags.py`.
