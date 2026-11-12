@@ -331,7 +331,7 @@ reviewable against the configuration of record.
 - [ ] T047 [US4] FR-010 / AS4. Confirm research.md R8 holds the per-dependency table: rate loop, state to the companion and
   fallback × "depends on INAV's nav estimate?" × the gates applied during autoc, plus the reduced-role design (built after G2). Add
   the table to R8 if any column is missing. File "build the reduced-role INAV" in `specs/BACKLOG.md`
-- [ ] T048 [US4] Correct the wrong comment at `xiao/src/msplink.cpp:1093-1095` (comment only; no code change). MANUAL is on RC6,
+- [X] T048 [US4] Correct the wrong comment at `xiao/src/msplink.cpp:1093-1095` (comment only; no code change). MANUAL is on RC6,
   which the override holds; `aux 4` is NAV RTH on RC8; the pilot escape is RC9 override off (research R8; the B-8 decision). `pio run` SUCCESS
 - [ ] T049 [US4] (operator) The final article 1 change set. Apply any remaining rows with `inav_cli_apply.py`, `save`, reboot, and
   read every row back (FR-009). Capture `diff all` into `specs/045-m2-tracking/bench-YYYYMMDD/`. Then, with the operator's

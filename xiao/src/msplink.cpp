@@ -1091,9 +1091,13 @@ static void performMspSendLocked()
   // envelope — upset recovery stays the policy's (and the pilot's) job.
   //
   // msp_override_channels bitmask must include bit 5 (CLI: set
-  // msp_override_channels = 47). ⭐ It does NOT include bit 7, so MANUAL's own
-  // switch (aux 4 on RC8) stays with the pilot — that is deliberate: the pilot
-  // must be able to grab MANUAL mid-engagement as an escape.
+  // msp_override_channels = 47). ⚠️ Corrected 2026-11-12 (045 research R8):
+  // MANUAL is on RC6 (`aux 2 12 1 900 1200`), the channel this override HOLDS,
+  // so MANUAL is NOT available while autoc is engaged (intended: the companion
+  // forces ACRO). `aux 4` on RC8 is NAV RTH / POSHOLD, which needs a valid nav
+  // estimate. The pilot escape is RC9 override off (`aux 6 50 4`): INAV stops
+  // merging these channels within ~1 RX frame (rx/rx.c, rx/msp_override.c), and
+  // the pilot's own RC6 mode switch (MANUAL / ANGLE / ACRO) applies again.
   state.command_buffer.channel[5] = 1500;
   msp.send(MSP_SET_RAW_RC, &state.command_buffer, sizeof(state.command_buffer));
 }
