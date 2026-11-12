@@ -44,6 +44,28 @@ Order:
 **Created 2026-08-17** when 041 was scoped down to *"a fresh full M1 toolchain, flown"*. This holds the M2
 work moved out of it. **Not started.**
 
+## 📋 Plan research scope (agreed 2026-11-10, for `/speckit.plan`)
+
+`/speckit.plan` runs in one session and does only the **remote** research: code and source reading, analysis of the committed logs,
+arithmetic. Items that need the article become written procedures, and then early bench tasks in `tasks.md`. Decisions that depend
+on them are written as conditionals, and `research.md` is revised when the results come in. Depth: everything up to G2 in full;
+phases 2–5 as a readiness scan only.
+
+| # | question | remote (plan) | needs the article (task) |
+|---|---|---|---|
+| R1 | do all dmp readers go through `s3GetDmpBlob` / `s3PutDmpBlob`? (suspects: `predictor_analysis`, `rnn_capacity`, `source_dmp_loader`) | code scan | — |
+| R2 | why BLE download is so slow, and why every field attempt dropped before completing | read the xiao BLE service + `flight_logger.html` (MTU, connection interval, notify vs read, chunk size, acks, per-chunk delay, QSPI read); theoretical rate; resume design. ⚠️ No pasted browser logs survive (searched both hosts' session transcripts 2026-11-10) | **instrument first** (per-chunk timestamps, negotiated MTU/interval, retries, drop point, copy-log button), then one bench download, pasted back = the measurement of record |
+| R3 | N1: per-span attitude / velocity / position drift | the `nav_*` tools + gyro-only attitude from engage, on 11-08 and 10-18. Plan does enough to size decisions; the full report is an N1 task | — |
+| R4 | attitude-stability budget (< 1° / 17 s) per source | error model: bias and its stability, **gyro scale factor** (likely dominant: ~1500° of rotation per spiralling span, so 1 % scale error ≈ 15°), g-sensitivity, vibration, range, read rate; vs R3 | possibly a gyro scale-factor rotation test |
+| R5 | INAV settings review (classes B/C/D), receiver capability | fork source for every setting; offline replay on 11-08 / 10-18; **receiver = datasheet + firmware research** (believed M8Q-5883 / SAM-M8Q: GNSS set, max concurrent, nav rate with several GNSS, AIR_4G) | `status` read-back on each article as the cross-check |
+| R6 | calibration policy, mounting, alignment | trace boot gyro / gravity cal and in-flight accel bias learning; explain stored 943.5 cm/s²; write the procedures; mount spectra + alignment fits from logs (R7) | **the real article, levelled so the flat wing bottom is flat (≈ 0° angle of attack) as the level reference**; 6-point accel cal; board-alignment check; **outdoor** compass calibration away from metal, with care |
+| R7 | mount resonance / alignment per board (foam tape) | `GYRO_RAW` / ACC spectra, level-boot gravity, in-flight fit. The xiao does not log its own IMU yet | — |
+| R8 | INAV role (N6) | confirm ACRO + the autoc MSP override never read attitude/nav state; what failsafe / RTH need; reduced-role design | — |
+| R9 | N3 / B1 fields | what INAV can put in `MSP2_AUTOC_STATE` and the blackbox; log v7 impact on tools; test procedure | **outdoor** satellite-block test (needs sky), with care |
+| R10 | N4 feasibility (shadow) | LSM6DS3TR-C over I2C (no on-chip fusion): sustainable read rate and FIFO use beside the 20 Hz NN, BLE and QSPI logging; CPU budget; handover at engage | — |
+| R11 | re-fly test card + analysis protocol; article 2 readiness | draft | — |
+| R12–R15 | readiness scan: camera data + 040 variations + gap list; perfect-signal switch; input-domain check tools; tracker pipeline health on layout v4 + the 041 hand-over | code / doc scan | — |
+
 ## ⛔ FRONT TASK — write-through dmp cache on the training box (filed 2026-10-25)
 
 **Must land in the build that runs 045's first smoke/bake.** It's independent of the M2 content, so it can merge on its own
@@ -118,8 +140,9 @@ path. Eventually not using INAV other than as a safety fallback seems good."*
   > 70°; best-fit offset scatter ±10–25°). That points at INAV's AHRS during sustained pulls (`ahrs_acc_ignore_rate 15` ⇒ gyro + mag
   only) and the under-calibrated QMC5883. ⚠️ The reference is 10 Hz GPS velocity from a 5–7-sat receiver, so the evidence is
   indirect. Two INAV design points made it worse: when GPS stops correcting, horizontal velocity **decays to zero** at
-  `inav_w_xy_res_v` 0.5/s **÷ accWeight**, and Z vibration holds accWeight at its 0.30 floor in every span (≈ 1.7/s decay); with
-  `inav_allow_dead_reckoning = OFF` the estimate then freezes.
+  `inav_w_xy_res_v` 0.5/s **÷ accWeight**, and Z vibration holds accWeight at its 0.30 floor in every span (≈ 1.7/s decay); the
+  estimate then freezes when EPH crosses `inav_max_eph_epv`. ⚠️ *Corrected 2026-11-11 (research.md R5)*: `inav_allow_dead_reckoning`
+  plays no part. It is read only when no GPS sensor is present at all.
 - ⚠️ **The quaternion is 4 of the policy's inputs.** If attitude is off 10–25° in hard manoeuvres, the policy sees that exactly when
   it matters.
 - ⚠️ **"Dead reckoning should be easy" holds for attitude and velocity over 17 s, not for double-integrated position at these

@@ -1,6 +1,6 @@
 # autoc Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-10-19
+Auto-generated from all feature plans. Last updated: 2026-11-11
 
 ## Toolchains & Build Environment
 
@@ -57,6 +57,8 @@ decoder-gateware change.
 - file-based — `data.dat` (per-tick trace), `data.stc` (per-gen), S3 `autoc-m1`; xiao QSPI flash log (043-acro-dual-loop)
 - C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analytics) + Eigen, cereal, inih, GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (unchanged), PlatformIO (xiao) (044-m1-craft-history)
 - files — dmp (S3 `autoc-m1` / `autoc-eval`), data.dat, xiao flight log, blackbox CSV (044-m1-craft-history)
+- C++17 (autoc, crrcsim, tools), C (INAV 8.0 fork, branch `autoc`), C++ / Arduino-mbed (xiao, PlatformIO), + Eigen, cereal, inih, GoogleTest, AWS SDK C++ (S3), CRRCSim LaRCSim FDM; ArduinoBLE 2.1.0 over mbed Cordio; (045-m2-tracking)
+- S3 per-mode buckets (archive of record) + **new local dmp cache** (`AUTOC_DMP_CACHE`); xiao QSPI flash log (**v6 → v7**); (045-m2-tracking)
 
 - C++17 + Eigen, cereal (serialization), inih (config), GoogleTest (015-nn-training-improvements)
 
@@ -75,7 +77,11 @@ tests/
 
 C++17: Follow standard conventions
 
-## Active feature — 045 M2 tracking (seed, not started; state 2026-11-08)
+## Active feature — 045 M2 tracking (spec + plan done 2026-11-11; implementation not started)
+
+**045 start here**: [`specs/045-m2-tracking/spec.md`](specs/045-m2-tracking/spec.md) § Execution order governs (Phase 0 front/pre-tasks → G1 → re-fly g800 = G2, end of the first implementation pass → camera → perfect-signal M2 sim → sim-only M2 run); then [`plan.md`](specs/045-m2-tracking/plan.md) and [`research.md`](specs/045-m2-tracking/research.md). ⛔ Pilot escape during autoc is the **RC9 override switch**, not MANUAL (MANUAL sits on overridden RC6; research R8).
+
+### Background (2026-11-08)
 
 **044 is CLOSED** (2026-11-08, [`outcome.md`](specs/044-m1-craft-history/outcome.md), **partly met**): the honest roll plant cut 3–5 Hz
 roll 60 % in the air and tracking improved, but pitch moved into 2–3 Hz (+35 %) and SC-002 missed; the flight's airframe fit changed
@@ -121,9 +127,9 @@ Constitution IV, operator-driven.
 best M1 in project history, flown. Its t7 run is 043's baseline of record.
 
 ## Recent Changes
+- 045-m2-tracking: Added C++17 (autoc, crrcsim, tools), C (INAV 8.0 fork, branch `autoc`), C++ / Arduino-mbed (xiao, PlatformIO), + Eigen, cereal, inih, GoogleTest, AWS SDK C++ (S3), CRRCSim LaRCSim FDM; ArduinoBLE 2.1.0 over mbed Cordio;
 - 044-m1-craft-history (CLOSED 2026-11-08): Added C++17 (autoc, crrcsim, xiao firmware), Python 3.11 (analytics) + Eigen, cereal, inih, GoogleTest, CRRCSim LaRCSim FDM, INAV MSP (unchanged), PlatformIO (xiao)
 - 043-acro-dual-loop: Added C++17 (autoc, crrcsim), C (INAV fork), C++ (xiao / PlatformIO arduino-mbed), Python 3.11 (analysis) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp), inih (ini), GoogleTest, CRRCSim LaRCSim FDM, INAV MSP
-- 041-m2-depth: Added C++17 (autoc, crrcsim, tools), Python 3.11 (analytics only) + Eigen (vec3/quat), cereal (NN + `EvalResults` + dmp serialization), inih (ini),
 
 
 <!-- MANUAL ADDITIONS START -->

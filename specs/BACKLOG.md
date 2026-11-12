@@ -94,6 +94,16 @@ not — at 2.5 Hz every 10 ms is 9° of phase, in the band SC-002 missed.
 
 ## Infrastructure
 
+### [filed 2026-11-11 · 💸 COST, low priority] Thin the `autoc-m1` archive — 302 GB of `retain=keep`, ~255 GB recoverable
+Survey 2026-11-11: 17 runs, 313 GB. Ten fully `keep` runs (035-t6, 037-t10, 07-06 = 038/039/040 source, 041-t7, 043-t2…t6,
+044-t1) hold 302 GB; seven small 044 smoke / attribution runs (7 GB) are `expire` and age out on their own. Storage ≈ $7/month, small
+next to egress (the 045 F1 cache comes first). Old runs are pre-schema-6 and unreadable by current tools without an old build;
+their knowledge lives in each feature's outcome / MANIFEST / artifact extracts. **Policy when picked up** (Constitution VIII):
+keep 044-t1 whole (current baseline + M2 source). For every other run, keep gen 1, the flown gen(s), the final gen and every gen
+a doc cites, and retag the rest `retain=expire` (the 30-day lifecycle is the undo window). Retag one run at a time with a
+readback. 043-t4 (stalled at 413, never flown, 20.5 GB) may go whole if its MANIFEST suffices. ⚠️ `autoc-generator` cannot read
+the bucket lifecycle (`s3:GetLifecycleConfiguration` denied): confirm the rule from an account that can, before relying on it.
+
 ### [filed 2026-10-25 · 💸 COST · ✅ PROMOTED → 045 FRONT TASK] Write-through dmp cache — reporters re-download every dmp 2–7× from S3
 
 Oct 2026 egress = 378 GB / $25.04 of a $32.33 bill. S3 access logs attribute it to `generate_pngs.sh` on the training box:

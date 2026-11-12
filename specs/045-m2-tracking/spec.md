@@ -52,6 +52,9 @@ variation and lens assumption built in 040 against the field data, and records w
 - **The 045 M2 training run is simulation-only and will not fly.** It runs on a **perfect signal**: it asks whether M2 works at all,
   not what the hardware's signal costs (operator 2026-11-10). Realistic signal is a later run (phase 5).
 - **The first implementation pass ends at the re-fly gate** (G2). Phases 3–5 are specified now and planned and implemented after it.
+- **Safety is formalized pre-work in this feature** (operator 2026-11-11): the fault-behaviour work (spec FR-015a/b, research
+  R16–R18) is an add-on to 045's goals, done in Phase 0 and proven by simulated-fault bench tests (bench-checklist § H) before the
+  re-fly. Intentional in-flight fault testing waits for a large open site.
 - Article 2 flies only if it is ready and the weather allows. Its absence does not block the gate.
 
 ---
@@ -113,6 +116,31 @@ variation and lens assumption built in 040 against the field data, and records w
   case: estimator error bounds, sample rates, the questionable barometer, more satellites, the calibration policy, plus
   fallback/gate settings that don't touch the rate loop or what the policy observes. The reduced-role design is written before G1
   and built after G2 (FR-010).
+- Q: Failure behaviour during autoc (research R16) — which changes before the re-fly? → A (operator 2026-11-11): **B-1** neutral
+  (zero-rate) frames on every stop: yes. **B-3** map mode bits by permanent id: yes. **B-4** a control-loop watchdog: yes. A wedged
+  xiao is recoverable as long as INAV is in control. **B-5** failsafe logging and awareness: yes. **B-2** is reframed: rather than
+  only blocking re-engage, recovery and re-arm after a transmitter reboot, an INAV reboot or LOS are to be designed deliberately
+  (R17). **B-6** loss-of-signal procedure: **DROP stays for now** ("generally the safest"); revisit RTH-with-climb (trees around
+  the park) later. GPS at 10 Hz confirmed. ⭐ Direction: **rapid recovery from any of these faults** (TX reset, RX glitch, INAV
+  wedge). Tests fly at 300–400 ft, and the current setup does not leave enough time to recover from a dive at that height. Each
+  policy change is delicate: the system works, and there has been no intentional fault testing on this field. A large open space
+  is wanted for that in the future.
+- Operator direction (2026-11-11): worries include the xiao going wrong and **flooding INAV with MSP traffic**, and **brownouts**
+  (flight controller, GPS, companion). Shorten recovery in every case, even if it stays above the ~4.2 s dive-to-ground figure.
+  **In-flight re-arm is definitely wanted.** An earlier approach was a transmitter-side flag: re-assert arm when motion is detected,
+  held in the transmitter's global variables. A GPS brownout or restart is the least clear case. ⭐ **Principle: in every fault,
+  throttle goes to 0 first.** That is the key to minimising a powered fly-away. (FR-015b, research R17.)
+- Operator (2026-11-11): yes to all the control manipulations above. **This is all-attitude flight**, so "levelling the wings" vs
+  "centring the surfaces" vs "zero rate" is not obviously safe at an arbitrary attitude (inverted, vertical). **The first goal is:
+  no continued powered flight.** Surface behaviour after a fault is secondary and is decided with care, per attitude.
+- Q: FC watchdog (R-4), and when? → A: **Before the re-fly** (INAV fork change, with R-7: ignore non-MSP bytes on the companion's
+  UART).
+- Q: After a companion reboot in flight, what may the companion do? → A: **It must not resume control, whatever the autoc switch
+  position. Control stays with INAV until a disarm → arm cycle** (stronger than an RC9-cycle latch). B-2b (skip the boot delay
+  without USB) and B-2c (short watchdog from first arm) were not selected for the re-fly.
+- Q: `failsafe_delay` to bench-test first? → A: **5** (stage-1 window 0.7 s, companion-held window ~0.9 s). Plus: **re-enabling
+  after a failsafe needs fewer steps**. Today it can take throttle 0, disarm, arm, throttle. The recovery design must minimise the
+  pilot actions needed to regain control.
 - Operator note: every board (controller, companion, receiver/compass) is mounted on double-sided foam tape: decent damping, but
   each board has its own resonances and its alignment is approximate. The re-fly prep takes a more serious pass at rough
   accelerometer calibration, board alignment and outdoor compass calibration (FR-007b).
@@ -454,6 +482,34 @@ values.
 
 ### Functional Requirements — phase 1 (re-fly)
 
+- **FR-015a**: Before the re-fly, the companion MUST:
+  - send zero-rate, **minimum-throttle** frames on every stop until INAV's override times out;
+  - identify INAV's mode bits by permanent id, failing loud if they are missing;
+  - run a control-loop watchdog;
+  - stop and log on receiver failsafe (research R16 B-1, B-3, B-4, B-5).
+  - after any companion reboot while INAV is armed, **never resume control until INAV has been disarmed and re-armed**, whatever
+    the autoc switch position, and log the reboot with its reset reason (R18 B-2a, operator-strengthened).
+
+  None of these changes how the policy flies while engaged.
+- **FR-015b**: The behaviour after each fault (receiver glitch or loss, transmitter reboot, flight-controller reboot, companion wedge)
+  MUST be written down as a timeline to stabilised and pilot-controllable flight, under the configuration of record. Each
+  configuration change to the loss-of-signal procedure or re-arm behaviour MUST be justified against that timeline and
+  bench-tested before it flies. The loss-of-signal procedure stays **DROP** for the re-fly unless a tested alternative is adopted.
+  The design rules are, in priority order:
+  - **(1) no continued powered flight: throttle to 0 first, in every fault**, including the window in which INAV holds the
+    companion's last command;
+  - **(2) surface behaviour after a fault** (zero rate holds the current attitude; INAV's forced ANGLE self-levels by its own path;
+    centred surfaces) is chosen per attitude with care. No option is assumed safe from inverted or vertical, and the choice is
+    justified from the traced behaviour before any change from today's;
+  - recovery as fast as the configuration allows;
+  - an **in-flight re-arm path** that is designed and bench-tested;
+  - the companion **rate-limits its own MSP traffic**, so a misbehaving companion cannot load the flight controller.
+  - **a flight-controller watchdog** (fork change, before the re-fly), so an INAV hang resets with the motor off instead of freezing
+    the surfaces with the motor running; and the companion's UART ignores non-MSP bytes (R17 R-4, R-7);
+  - **minimal pilot actions to regain control after a failsafe**: the candidate procedures (DROP vs LAND) and re-arm paths are
+    compared on the number and kind of actions the pilot needs once the link returns, as well as on time;
+  - `failsafe_delay` bench-tested at **5** first.
+  Intentional in-flight fault testing is out of scope for this feature's flights; it needs a large open site (research R17).
 - **FR-016**: The re-fly MUST fly 044-t1 g800 on the configuration recorded under FR-007, with the policy on INAV's estimate. Any
   companion frame (FR-015) runs in shadow only.
 - **FR-017**: For the re-fly, settings in the rate loop, and settings that change observation delay, MUST be held at the
@@ -486,8 +542,9 @@ values.
   fraction of ticks at a bound, from the most recent training (044-t1) and the most recent flight (11-08), and for the tracker
   inputs from the M2 smoke. The goal is all inputs in roughly the same range, as a **secondary** effort. Constants change only
   where forced: an input that saturates, or one so quiet the policy cannot select on it (the 041 failure mode). **M1's shared
-  inputs stay roughly as they are.** The tracker's camera inputs replace the M1 direction-to-target inputs and are already small
-  quantized integers. The README's Gate 2 audit is this check. The backlog's formal input-normalization item stays in the backlog.
+  inputs stay roughly as they are.** The tracker's camera inputs replace the M1 direction-to-target inputs. ⚠️ Plan research
+  (R14) found only CEP is an int8 quantity: bearings are pixel-quantized fp32 radians, pair span is raw radians, and span rate is
+  Δspan / 0.05 s. So the domain check matters most for them. The README's Gate 2 audit is this check. The backlog's formal input-normalization item stays in the backlog.
 - **FR-023**: The M2 run MUST be simulation-only and MUST NOT be flown.
 - **FR-024**: The phase 4 result MUST be reported on the same tracking definitions as the 040/041 tracker results, and MUST state
   the signal difference: 040/041 used a realistic-signal model, phase 4 uses a perfect signal. When phase 5 runs on realistic
