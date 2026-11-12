@@ -39,3 +39,5 @@ void flashLoggerStopDownload();
 FlashLoggerState flashLoggerGetState();
 bool flashLoggerHasPendingData();
 uint32_t flashLoggerGetActiveDownloadSize();
+// 045 F2 diagnostic: time the QSPI read path into `out` (bench console QPROF).
+void flashLoggerProfileRead(char* out, size_t n);

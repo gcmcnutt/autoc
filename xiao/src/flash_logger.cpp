@@ -577,15 +577,13 @@ int flashLoggerReadChunk(uint8_t* buffer, size_t maxLen) {
     toRead = maxLen;
   }
 
-  while (nrfx_qspi_mem_busy_check()) {
-    delayMicroseconds(5);
-  }
+  // No status poll here (045 F2): nothing programs or erases the flash while a download runs (FLASH_DOWNLOADING), and the poll
+  // only waited out the spurious post-read BUSY window described at qspiRead.
   if (!qspiRead(downloadReadAddr, downloadScratch, toRead)) {
     logPrint(ERROR, "QSPI chunk read failed at addr 0x%lx len=%lu",
              (unsigned long)downloadReadAddr, (unsigned long)toRead);
     return -1;
   }
-
   memcpy(buffer, downloadScratch, toRead);
   downloadReadAddr += toRead;
   downloadBytesSent += toRead;
@@ -623,15 +621,13 @@ static bool qspiInit() {
   return true;
 }
 
+// 045 F2 (measured 2026-11-12 with console QPROF): nrfx_qspi_read is blocking and returns with the data in place (~137 us for
+// 240 B). The post-read status poll that used to follow it is gone: after a read at a new address the status check reported BUSY
+// (0x11) for ~60 ms on average (max ~200 ms), although a read never makes NOR flash busy (only program / erase do). That poll was
+// the whole cost of a download: ~79 ms per 240 B chunk, i.e. the ~1.6 kB/s BLE download and the ~2.8 kB/s wired dump. Writes and
+// erases keep their busy waits. QPROF shows whether the BUSY is the flash's own status byte or the driver's.
 static bool qspiRead(uint32_t addr, void* data, size_t len) {
-  nrfx_err_t err = nrfx_qspi_read(data, len, addr);
-  if (err != NRFX_SUCCESS) {
-    return false;
-  }
-  while (nrfx_qspi_mem_busy_check()) {
-    delayMicroseconds(10);
-  }
-  return true;
+  return nrfx_qspi_read(data, len, addr) == NRFX_SUCCESS;
 }
 
 static bool qspiWriteBlocking(uint32_t addr, const void* data, size_t len) {
@@ -1046,3 +1042,50 @@ static void resetSlotMetadata(BufferSlot* slot) {
 // Text append path (appendMessageToActive / drop-notice text records) removed
 // in 039 US3 — binary records only (flashLoggerWriteBinary above); drops are
 // counted by the flight_log layer and surfaced as kEventLogDrop records.
+
+// --- 045 F2 diagnostic: time the QSPI read path (console "QPROF"; bench only, disarmed) -----------------------------------
+// Keeps the 2026-11-12 finding reproducible (see qspiRead): the raw read at fresh addresses, how long the status check reports
+// BUSY right after it (the poll qspiRead no longer does), and the real chunk path inside a download of the first file.
+void flashLoggerProfileRead(char* out, size_t n) {
+  if (currentState != FLASH_IDLE) { snprintf(out, n, "QPROF_ERR:flash not idle (state %d)", (int)currentState); return; }
+  uint32_t readUs = 0, readMax = 0, busyUs = 0, busyMax = 0, chunkUs = 0, chunkMax = 0, chunks = 0;
+  // the raw status byte (RDSR 0x05) right after a fresh read, read by our own custom instruction
+  uint32_t rawErr = 0, rawWipSet = 0, rawSamples = 0; uint8_t rawFirst = 0xEE, rawLast = 0xEE;
+  {
+    (void)nrfx_qspi_read(downloadScratch, 240, FLASH_DATA_START_ADDR + 8192u + 64u);
+    nrf_qspi_cinstr_conf_t cfg = NRFX_QSPI_DEFAULT_CINSTR(0x05, NRF_QSPI_CINSTR_LEN_2B);
+    for (int i = 0; i < 50; i++) {
+      uint8_t st = 0xEE;
+      if (nrfx_qspi_cinstr_xfer(&cfg, NULL, &st) != NRFX_SUCCESS) rawErr++;
+      if (i == 0) rawFirst = st;
+      rawLast = st;
+      if (st & 0x01) rawWipSet++;
+      rawSamples++;
+      delayMicroseconds(1000);
+    }
+  }
+  for (int k = 0; k < 10; k++) {
+    const uint32_t addr = FLASH_DATA_START_ADDR + 4096u * (k + 1) + 512u;
+    uint32_t t = micros();
+    (void)nrfx_qspi_read(downloadScratch, 240, addr);
+    t = micros() - t; readUs += t; if (t > readMax) readMax = t;
+    t = micros();
+    for (int guard = 0; guard < 20000 && nrfx_qspi_mem_busy_check() != NRFX_SUCCESS; guard++) delayMicroseconds(10);
+    t = micros() - t; busyUs += t; if (t > busyMax) busyMax = t;
+  }
+  if (flashLoggerGetFileCount() > 0 && flashLoggerStartDownload(flashLoggerGetFileName(0))) {
+    for (int i = 0; i < 20; i++) {
+      uint32_t t = micros();
+      const int got = flashLoggerReadChunk(downloadScratch + 256, 240);
+      t = micros() - t;
+      if (got <= 0) break;
+      chunkUs += t; if (t > chunkMax) chunkMax = t; chunks++;
+    }
+    flashLoggerStopDownload();
+  }
+  snprintf(out, n, "QPROF: fresh-address read %lu/%lu us, status BUSY after it %lu/%lu us, readChunk %lu/%lu us (%lu chunks) "
+           "[mean/max]; raw RDSR after a read: first 0x%02X last 0x%02X, WIP set %lu/%lu samples (1 ms apart), cinstr errors %lu",
+           (unsigned long)(readUs / 10), (unsigned long)readMax, (unsigned long)(busyUs / 10), (unsigned long)busyMax,
+           (unsigned long)(chunks ? chunkUs / chunks : 0), (unsigned long)chunkMax, (unsigned long)chunks,
+           (unsigned)rawFirst, (unsigned)rawLast, (unsigned long)rawWipSet, (unsigned long)rawSamples, (unsigned long)rawErr);
+}

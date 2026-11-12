@@ -105,11 +105,19 @@ def main():
     target = files[-1]
     c.js(f"downloadFile({json.dumps(target)})", gesture=True)
     print(f"downloading {target} for {SAMPLE_S:.0f} s ...", flush=True)
-    c.pump(SAMPLE_S)
+    t_dl = time.time()
+    while time.time() - t_dl < SAMPLE_S:   # stop early once the page reports the download finished or failed
+        c.pump(1.0)
+        st = c.js("document.getElementById('status').textContent") or ""
+        if time.time() - t_dl > 3 and ("verified" in st or "CRC mismatch" in st or "Error" in st or "Disconnected" in st):
+            break
+    print(f"download phase {time.time() - t_dl:.1f} s", flush=True)
     probe = c.js("JSON.stringify(window.__probe.ev)")
+    page_log = c.js("typeof dlLog !== 'undefined' ? dlLog.join('\\n') : ''") or ""   # 045 F2 page instrumentation
     status = c.js("document.getElementById('status').textContent")
     c.js("disconnect()", gesture=True); c.pump(2)
-    json.dump({"target": target, "files": files, "status_at_end": status, "events": json.loads(probe or "[]")},
+    json.dump({"target": target, "files": files, "status_at_end": status, "page_log": page_log,
+               "events": json.loads(probe or "[]")},
               open(OUT, "w"))
     ev = json.loads(probe or "[]")
     data = [e for e in ev if e[0] == "n" and e[2] == "6002"]
@@ -120,6 +128,7 @@ def main():
         gaps = sorted(b[1] - a[1] for a, b in zip(data, data[1:]))
         print(f"data notifications {len(data)}  sizes {sizes}  bytes {tot}  span {span:.1f} s  rate {tot / max(span, 1e-3) / 1000:.2f} kB/s"
               f"  gap median {gaps[len(gaps) // 2] if gaps else 0:.1f} ms  p90 {gaps[int(.9 * len(gaps))] if gaps else 0:.1f} ms")
+    print("page log tail:", *page_log.splitlines()[-6:], sep="\n  ")
     print("end status:", status, "| saved", OUT)
 
 

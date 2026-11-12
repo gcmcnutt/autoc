@@ -45,7 +45,8 @@ def main():
     ap.add_argument("--list", action="store_true", help="list the flight logs on the xiao")
     ap.add_argument("--file", help="flight log to dump, e.g. flight_001.bin")
     ap.add_argument("-o", "--out", help="output path (default: <file> in the current directory)")
-    ap.add_argument("--timeout", type=float, default=60.0, help="seconds allowed for the whole dump (default 60)")
+    ap.add_argument("--timeout", type=float, default=None,
+                    help="seconds allowed for the dump (default: size / 1 kB/s + 60 s). Never quit mid-stream: an abandoned\n                         dump stalls the xiao's loop until it notices the port closed")
     args = ap.parse_args()
     if not args.list and not args.file:
         ap.error("give --list or --file")
@@ -71,7 +72,7 @@ def main():
         size = int(head.rsplit(":", 1)[1])
         data = bytearray()
         t0 = time.monotonic()
-        deadline = t0 + args.timeout
+        deadline = t0 + (args.timeout if args.timeout else size / 1000.0 + 60.0)
         while len(data) < size:
             if time.monotonic() > deadline:
                 sys.exit(f"timed out after {len(data)} of {size} bytes")
@@ -80,7 +81,9 @@ def main():
         tail = wait_for(port, ("DUMP_END:", "DUMP_ERR:"), 10)
         if not tail.startswith("DUMP_END:"):
             sys.exit(f"dump failed: {tail}")
-        _, crc_hex, n = tail.split(":")
+        fields = tail.split(":")
+        crc_hex, n = fields[1], fields[2]
+        timing = fields[3:6]  # total ms, flash read ms, usb write ms (firmware instrumentation)
         crc = zlib.crc32(bytes(data)) & 0xFFFFFFFF
         if int(n) != size or crc != int(crc_hex, 16):
             sys.exit(f"MISMATCH: size {len(data)} vs {n}, crc {crc:08X} vs {crc_hex}; nothing written")
@@ -88,6 +91,8 @@ def main():
         with open(out, "wb") as f:
             f.write(data)
         print(f"wrote {out}: {size} bytes, CRC32 {crc:08X} OK, {secs:.2f} s ({size / 1024 / max(secs, 1e-6):.1f} kB/s)")
+        if len(timing) == 3:
+            print(f"  xiao side: total {timing[0]} ms, flash read {timing[1]} ms, USB write {timing[2]} ms")
 
 
 if __name__ == "__main__":

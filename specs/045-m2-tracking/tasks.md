@@ -59,7 +59,7 @@ is outside this pass.
 
 - [X] T001 Create `specs/045-m2-tracking/MANIFEST.md` with § Starting point, § Preservation, § Change sets, § Builds, § Gates and
   § Safety ladder. Later tasks append keys, tags, hashes, build results and verdicts to it
-- [ ] T002 (operator) Starting-point build gate on the branch head, recorded in `specs/045-m2-tracking/MANIFEST.md` § Starting
+- [X] T002 (operator) Starting-point build gate on the branch head, recorded in `specs/045-m2-tracking/MANIFEST.md` § Starting
   point: clean `bash scripts/rebuild-perf.sh`; `cd build && ctest` (R15 saw 55/55 at fb4d3ba; record the actual count);
   `~/.platformio/penv/bin/pio run -e xiaoblesense_arduinocore_mbed -d xiao` (baseline RAM 53.6 % / flash 45.8 %). Also record the
   git hash of the xiao build flown on 11-08, which T062 diffs against. No hash was recorded at the time. The candidate is `78e7d6e`

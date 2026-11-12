@@ -34,6 +34,8 @@ static unsigned long dlMaxNextGapMs = 0; // longest gap between NEXT requests
 static unsigned long dlLastLoopMs = 0;
 static unsigned long dlLastNextMs = 0;
 static unsigned long dlStartMs = 0;
+static uint32_t dlReadUs = 0;            // total time in flashLoggerReadChunk this download
+static uint32_t dlNotifyUs = 0;          // total time in the data notify (writeValue)
 
 // The negotiated ATT MTU of the connected central. ArduinoBLE exposes MTU only by connection handle, so scan the low
 // handles (Cordio allocates them from 0). 0 = no connected handle found.
@@ -46,14 +48,14 @@ static uint16_t currentAttMtu() {
 
 static void dlResetStats() {
   dlChunks = 0; dlShortWrites = 0; dlLastSentLen = -1;
-  dlMaxLoopMs = 0; dlMaxNextGapMs = 0;
+  dlMaxLoopMs = 0; dlMaxNextGapMs = 0; dlReadUs = 0; dlNotifyUs = 0;
   dlLastLoopMs = dlLastNextMs = dlStartMs = millis();
 }
 
-// STAT:<offset>:<short_writes>:<max_loop_ms>:<max_next_gap_ms>
+// STAT:<offset>:<short_writes>:<max_loop_ms>:<max_next_gap_ms>:<read_ms_total>:<notify_ms_total>
 static void dlFormatStat(char* buf, size_t n) {
-  snprintf(buf, n, "STAT:%lu:%lu:%lu:%lu", (unsigned long)downloadTotalBytes, (unsigned long)dlShortWrites,
-           dlMaxLoopMs, dlMaxNextGapMs);
+  snprintf(buf, n, "STAT:%lu:%lu:%lu:%lu:%lu:%lu", (unsigned long)downloadTotalBytes, (unsigned long)dlShortWrites,
+           dlMaxLoopMs, dlMaxNextGapMs, (unsigned long)(dlReadUs / 1000), (unsigned long)(dlNotifyUs / 1000));
 }
 
 // Reboot state for non-blocking reboot after erase
@@ -241,7 +243,9 @@ static void processLoggerCommand(const char* cmd) {
 
 // Send one chunk per NEXT request (simple request-response, no delays)
 static void transferNextChunk() {
+  const uint32_t r0 = micros();
   int bytesRead = flashLoggerReadChunk(transferBuffer, FLASH_LOGGER_CHUNK_SIZE);
+  dlReadUs += micros() - r0;
 
   if (bytesRead < 0) {
     // Error
@@ -257,7 +261,7 @@ static void transferNextChunk() {
     // Complete - finalize CRC and send with status
     uint32_t finalCrc = downloadCrc ^ 0xFFFFFFFF;
     char statusMsg[64];
-    char stat[48];
+    char stat[64];
     dlFormatStat(stat, sizeof(stat));
     // DOWNLOAD_DONE:<crc>:<bytes>:<STAT fields> — the page reads fields 1 and 2; the rest is instrumentation.
     snprintf(statusMsg, sizeof(statusMsg), "DOWNLOAD_DONE:%08lX:%lu:%s",
@@ -276,14 +280,16 @@ static void transferNextChunk() {
   downloadCrc = crc32Update(downloadCrc, transferBuffer, bytesRead);
   downloadTotalBytes += bytesRead;
   // Send chunk via notification (no delay - pure sync request-response)
+  const uint32_t w0 = micros();
   const int sent = dataCharacteristic.writeValue(transferBuffer, bytesRead);
+  dlNotifyUs += micros() - w0;
   dlChunks++;
   if (sent != bytesRead) {  // 045 F2: measure truncation; step 2 makes this fail loud (ERR:SHORT_NOTIFY)
     dlShortWrites++;
     dlLastSentLen = sent;
   }
   if (dlChunks % 16 == 0) {
-    char stat[48];
+    char stat[64];
     dlFormatStat(stat, sizeof(stat));
     statusCharacteristic.writeValue(stat);
   }
@@ -351,7 +357,7 @@ void blueToothLoop()
 
     // Clean up any in-progress transfer
     if (transferInProgress) {
-      char stat[48];
+      char stat[64];
       dlFormatStat(stat, sizeof(stat));
       logPrint(WARNING, "Disconnected mid-download after %lu ms: %s", millis() - dlStartMs, stat);
       flashLoggerStopDownload();
@@ -376,18 +382,27 @@ static void serialDump(const char* filename) {
   Serial.flush();
   static uint8_t buf[FLASH_LOGGER_CHUNK_SIZE];
   uint32_t crc = 0xFFFFFFFF, total = 0;
+  uint32_t readUs = 0, writeUs = 0;
+  const uint32_t t0 = millis();
   for (;;) {
+    if (!Serial) { flashLoggerStopDownload(); return; }  // host closed the port: stop, don't feed a dead pipe
+    uint32_t a = micros();
     const int n = flashLoggerReadChunk(buf, sizeof(buf));
+    readUs += micros() - a;
     if (n < 0) { flashLoggerStopDownload(); Serial.print("\nDUMP_ERR:read failed at "); Serial.println((unsigned long)total); return; }
     if (n == 0) break;
     crc = crc32Update(crc, buf, n);
     total += n;
+    a = micros();
     Serial.write(buf, n);
+    writeUs += micros() - a;
     faultGuardFeed();
   }
   flashLoggerStopDownload();
-  char tail[48];
-  snprintf(tail, sizeof(tail), "\nDUMP_END:%08lX:%lu", (unsigned long)(crc ^ 0xFFFFFFFF), (unsigned long)total);
+  char tail[96];
+  // DUMP_END:<crc32>:<bytes>:<total ms>:<flash read ms>:<usb write ms> — the last three are instrumentation (045 F2)
+  snprintf(tail, sizeof(tail), "\nDUMP_END:%08lX:%lu:%lu:%lu:%lu", (unsigned long)(crc ^ 0xFFFFFFFF), (unsigned long)total,
+           (unsigned long)(millis() - t0), (unsigned long)(readUs / 1000), (unsigned long)(writeUs / 1000));
   Serial.println(tail);
   Serial.flush();
 }
@@ -414,6 +429,9 @@ void serialConsoleLoop() {
       Serial.println("LIST_DONE");
     } else if (strncmp(line, "DUMP:", 5) == 0) {
       serialDump(line + 5);
+    } else if (strcmp(line, "QPROF") == 0) {
+      if (state.isArmed()) { Serial.println("QPROF_ERR:armed"); }
+      else { char out[480]; flashLoggerProfileRead(out, sizeof(out)); Serial.println(out); }
     } else if (line[0] != '\0') {
       Serial.print("CONSOLE_ERR:unknown command: "); Serial.println(line);
     }

@@ -10,8 +10,8 @@ Branch head at the start of implementation: **`e808cd5`** (2026-11-12, the tasks
 |---|---|
 | incremental `cmake --build build -j8` + `cd build && ctest` | **55 / 55 passed** (2026-11-12) |
 | xiao `pio run -e xiaoblesense_arduinocore_mbed -d xiao` | **SUCCESS**, RAM 53.6 % (127 332 B), flash 45.8 % (371 372 B) |
-| clean `bash scripts/rebuild-perf.sh` (Constitution IV / IX) | ⏳ **owed: operator** |
-| INAV fork `~/inav` `autoc` @ `1fc3b257c`: `make MATEKF722MINI`, `make HGLRCF722LITE` | ⏳ not run (no fork change before the re-fly; needed before ladder L8 / L9) |
+| clean `bash scripts/rebuild-perf.sh` (Constitution IV / IX) | **OK** at `93a8295` (2026-11-12, operator-approved): binaries present, ctest **55 / 55** on the performance build |
+| INAV fork `~/inav` `autoc` @ `1fc3b257c`: `make MATEKF722MINI`, `make HGLRCF722LITE` | **OK** (2026-11-12): `inav_8.0.0_MATEKF722MINI.hex`, `inav_8.0.0_HGLRCF722LITE.hex` |
 
 **The xiao build flown on 11-08** (the base for T062's diff gate). No hash was recorded at the time. The candidate is **`78e7d6e`**
 (2026-11-07, "nn2cpp: unrolled is the default"), the last commit touching `xiao/` before the flight; nothing under `xiao/src` or
@@ -94,6 +94,17 @@ Report pass 1 (25 s) and pass 2 with `--no-cache` (19 s) left the cache byte-ide
 ⏳ **Held open (operator 2026-11-12):** the access-log confirmation for T009 / T013 and the month-end egress (T113) wait until
 the operator is at a host with the admin profile; the training box cannot read `autoc-s3-access-logs`. Sweep on the real cache: `--days 30` keeps both
 runs (fresh `retain=expire`); `--days 0` (dry run) would remove both (20 files, 0.28 GB).
+
+## § US2 BLE measurements (T014–T017)
+
+| date | build | what | result |
+|---|---|---|---|
+| 2026-11-12 | instrumented, old flash read | wired USB dump `flight_001.bin` | 106.9 s (2.8 kB/s); **flash read 101.6 s**, USB write 3.0 s; byte-identical to the 11-08 log |
+| 2026-11-12 | + no post-read status poll | console `QPROF` | raw read 137 µs; driver busy-check reports BUSY ~60 ms after a fresh read; raw RDSR = 0x00; `readChunk` **0.16 ms** (was 79.8 ms) |
+| 2026-11-12 | same | wired USB dump | **5.98 s (50.3 kB/s)**, flash read 206 ms, USB write 3.2 s; byte-identical |
+| 2026-11-12 | same | BLE, Linux central (Chromium 157 / BlueZ, `ble_cdp_probe.py`), ~1 m | 307 968 B in **125.7 s (2.39 kB/s)**, CRC OK, MTU 247, 0 short / 0 dup / 0 errors, RTT median 97.5 ms; STAT read 226 ms + notify 160 ms total |
+
+⏳ The field-phone run at ~3 m (T017's phone half) is owed by the operator.
 
 ## § Gates
 

@@ -222,6 +222,21 @@ from outside, so neither the page nor the firmware was modified. Captures in `be
 - **Remote checks work**: connect, list and download can be driven from the training host with the xiao on the bench (no pairing
   or bonding needed). The F2 work can be measured remotely, before and after.
 
+**Measured 2026-11-12 (instrumented firmware + page, from the training host; T014–T017)** — the measurement of record for the
+Linux central (FR-005). The field phone's run is still owed (T017):
+- **The flash read was the hidden cost.** `flashLoggerReadChunk` took **~79 ms per 240 B chunk** (wired USB dump: 101.6 s of
+  106.9 s in the read). The raw QSPI read is ~137 µs; the time was the status poll after it: the core's precompiled
+  `nrfx_qspi_mem_busy_check` reports BUSY (`0x11`) for ~60 ms (max ~200 ms) after any read at a new address, while the flash's own
+  status byte read by a custom RDSR is `0x00` (not busy) the whole time. Fix: no status poll in the read path (`qspiRead`,
+  `flashLoggerReadChunk`). Wired dump 106.9 s → **5.98 s** (50 kB/s), byte-identical to the 11-08 log; chunk read 79.8 ms → **0.16 ms**.
+  ⚠️ The same driver call guards the logger's program / erase waits — a spurious BUSY there costs time, not data (backlog).
+- **BLE is then pure stop-and-wait**: full 307 968 B download, CRC OK, **125.7 s = 2.39 kB/s**; MTU 23 at connect, **247** by
+  READY (BlueZ exchanges it), **0 short notifies, 0 duplicates, 0 errors** in a clean BlueZ session; round trip per chunk **median
+  97.5 ms, p90 98.6 ms** ≈ two BLE connection intervals (~48.75 ms) for one write-with-response NEXT + one notification; xiao-side
+  work 0.3 ms per chunk (STAT: read 226 ms + notify 160 ms in total). The old 79 ms read hid inside that wait, so it did not change
+  the BLE rate. ⇒ The dominant BLE cost is the protocol: **windowed streaming** (several notifications per connection event) and
+  a shorter connection interval are the fix; resume and duplicate tolerance stay required (FR-004, the 11-11 duplicate failure).
+
 **Decision**:
 1. **Instrument first** (operator's direction). Page: t0 at READY, per-chunk send→receive time, `byteLength` against the chunk
    size (detects truncation), offset, error name + offset on failure, disconnect offset and elapsed time, an in-memory log with a
