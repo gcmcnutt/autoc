@@ -89,7 +89,7 @@ to this file.
   constellations **active**.
 - [~] **E2 Nav rate check** *(2026-11-11 MSP: message interval 100–101 ms with 3 GNSS ⇒ 10 Hz held; confirm in a blackbox outdoors)*: the GPS frame interval in a short blackbox ≈ 100 ms (10 Hz); if 200 ms, drop GLONASS.
 - [ ] **E3 10 min static**: sats, HDOP, EPH, EPV, GPS-only vs multi-GNSS → the `GPS_ONLY` decision (EPV ≤ ~5 m).
-- [ ] **E4 Outdoor compass calibration** (after C6), then the heading at 8 known bearings < 5°.
+- [ ] **E4 Outdoor compass check + calibration** (after C6): first the **dip and \|m\| at N / E / S / W, level** (good calibration ⇒ dip ≈ 61° and the same \|m\| at every heading; indoors on 11-12 the dip read ~18° low after alignment, R19). Then the outdoor calibration if needed, then the heading at 8 known bearings < 5°.
 - [ ] **E5 Satellite-block test** (N3, once flags exist): cover the antenna ~15 s with autoc engaged, motor disconnected → the
   expected flags, no behaviour change.
 

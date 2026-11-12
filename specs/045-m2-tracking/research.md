@@ -507,7 +507,7 @@ valid estimate); RC6 MANUAL / ANGLE (**not available** while overridden).
 | B-5 | the xiao knows about receiver failsafe | add `rx_link_ok` and `failsafe_phase` to the state message (contracts v2) ⇒ stop + neutral on failsafe | before the re-fly |
 | B-6 | **receiver-loss procedure** | keep **DROP** (in-air disarm: predictable, no reliance on the nav estimate) *or* **RTH** (glide / spiral when nav is bad; relies on the estimate) *or* **LAND** (spiral then a timed disarm). Field rules and the flying site decide | **operator** |
 | B-7 | escape brief | RC9 low is the escape; RC6 does nothing while engaged; RC8 only with a valid estimate | before the re-fly |
-| B-8 | MANUAL reachable during autoc (optional) | move MANUAL off RC6, or accept RC9-then-MANUAL | **operator** |
+| B-8 | MANUAL reachable during autoc (optional) | move MANUAL off RC6, or accept RC9-then-MANUAL | ✅ **decided 2026-11-11: keep; escape = RC9 off** |
 
 None of B-1 … B-5 changes how the policy flies while engaged. They change only what happens at and after a stop, so the re-fly
 remains a g800 test (FR-017). They are bench-testable (quickstart § 6).

@@ -133,6 +133,8 @@ variation and lens assumption built in 040 against the field data, and records w
 - Operator (2026-11-11): yes to all the control manipulations above. **This is all-attitude flight**, so "levelling the wings" vs
   "centring the surfaces" vs "zero rate" is not obviously safe at an arbitrary attitude (inverted, vertical). **The first goal is:
   no continued powered flight.** Surface behaviour after a fault is secondary and is decided with care, per attitude.
+- Q: MANUAL during autoc (R16 B-8)? → A: **Keep it as is.** The companion forcing ACRO through RC6 during `autoc=y` is intended,
+  so the pilot escape is **RC9 override off** (then MANUAL is available again). No channel move.
 - Q: FC watchdog (R-4), and when? → A: **Before the re-fly** (INAV fork change, with R-7: ignore non-MSP bytes on the companion's
   UART).
 - Q: After a companion reboot in flight, what may the companion do? → A: **It must not resume control, whatever the autoc switch
