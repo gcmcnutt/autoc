@@ -320,9 +320,9 @@ reviewable against the configuration of record.
 - [ ] T045 [US4] The FR-007 review table in `config-changeset-art1.md`. Class every changed setting as A / B-accuracy / B-delay /
   C / D / E / hardware, with evidence and its effect on what the policy was trained on. For example, the board-alignment change is
   B-accuracy: it removes the 3.7° nose-up bias in the quaternion inputs. Confirm there is no class A or B-delay change (FR-017)
-  and no class D (failsafe) change. ⚠️ **Operator decision owed**: the board-alignment change (row 9) also rotates the rate
-  loop's gyro axes by 3.6° (it removes ~6 % roll↔yaw coupling). The sim already assumes aligned axes, so it moves flight toward
-  what g800 trained on (FR-017's "the simulator models it first"). Recorded as accuracy-class unless the operator rules it class A. State the calibration policy (FR-007a)
+  and no class D (failsafe) change. The board-alignment change (row 9) also rotates the rate loop's gyro axes by 3.6°
+  (~6 % roll↔yaw coupling removed). **Operator 2026-11-12: an accuracy fix**: the sim already assumes aligned axes. Sensor-alignment
+  variations in the sim (board + compass) are filed in `specs/BACKLOG.md` § 045 deferrals. `gps_min_sats` stays 6 (row 19). State the calibration policy (FR-007a)
 - [ ] T046 [US4] The FR-007b mount review per board (FC, xiao, GPS / compass), from T040 plus the level-boot gravity: resonance
   frequency and axis, and the alignment result, in `config-changeset-art1.md`. A mount change is hardware hygiene, recorded as
   A/B-able on the next flight. It is not a re-fly hold unless it saturates a sensor

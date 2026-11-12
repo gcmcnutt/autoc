@@ -1,6 +1,6 @@
 # AutoC Backlog
 
-**Last Updated**: 2026-11-08
+**Last Updated**: 2026-11-12
 
 > ✅ **044 CLOSED 2026-11-08** — [outcome](044-m1-craft-history/outcome.md), **partly met**. The roll-plant correction worked in the air
 > (3–5 Hz roll −60 %, tracking 12.2 → 9.1 m) but pitch moved into 2–3 Hz (+35 %) and **SC-002 missed**; the flight's airframe fit
@@ -39,6 +39,24 @@
 > *(Prior routing, 2026-07-10, 038 wrap: 039 xiao, then M2-depth items → 040.)*
 
 ---
+
+## 045 deferrals (filed 2026-11-12, during 045 implementation)
+
+### [045 US4 / N1, filed 2026-11-12 · operator] Sensor-alignment variations in the simulator: FC board alignment and compass alignment
+
+The re-fly's board-alignment correction (`align_board_roll/pitch` 1700 / 0 → 1736 / 7 on article 1,
+[change set](045-m2-tracking/config-changeset-art1.md) row 9) was ruled an **accuracy fix** (operator 2026-11-12): the sim already
+assumes perfectly aligned axes, so it moves flight toward what g800 trained on. But it shows the real airframe carries alignment
+error the sim never sees, and every article and every remount differs (foam-tape mounts, FR-007b):
+- **FC board misalignment**: rotates the rate loop's gyro axes (on article 1 the old setting was 3.6° off, ~6 % roll↔yaw
+  coupling inside the ACRO loop) **and** biases the attitude quaternion the policy observes (3.7° nose-up on article 1).
+- **Compass misalignment**: a tilt between the compass and the FC (research R19: up to ~15–18° of heading- and attitude-dependent
+  error for a 10° mismatch); N1 also saw a −8.6 to −18.8° pre-engage heading offset (drift-report.md), still to be attributed.
+
+Candidate: a per-scenario variation class (joint PRNG draw, like the 040 camera-mount variations) for board alignment (roll / pitch
+/ yaw, applied to both the rate-loop gyro axes and the observed attitude) and for compass alignment (heading error as a function
+of attitude), sized from the measured spread across articles and remounts. Trigger: after the re-fly measures the residuals
+(cal_verify.py, nav_heading_check.py), and before the next M1 bake. Pairs with N5 (estimator-error parity) in 045.
 
 ## 044 deferrals (filed 2026-11-08, from the acceptance flight)
 
