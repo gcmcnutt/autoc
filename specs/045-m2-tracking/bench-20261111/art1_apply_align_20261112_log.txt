@@ -1,0 +1,79 @@
+get align_board_roll
+align_board_roll = 1700
+Allowed range: -1800 - 3600
+
+
+# 
+set align_board_roll = 1736
+align_board_roll set to 1736
+# 
+get align_board_roll
+align_board_roll = 1736
+Allowed range: -1800 - 3600
+
+
+# 
+get align_board_pitch
+align_board_pitch = 0
+Allowed range: -1800 - 3600
+
+
+# 
+set align_board_pitch = 7
+align_board_pitch set to 7
+# 
+get align_board_pitch
+align_board_pitch = 7
+Allowed range: -1800 - 3600
+
+
+# 
+get align_mag_roll
+align_mag_roll = 0
+Allowed range: -1800 - 3600
+
+
+# 
+set align_mag_roll = 1736
+align_mag_roll set to 1736
+# 
+get align_mag_roll
+align_mag_roll = 1736
+Allowed range: -1800 - 3600
+
+
+# 
+get align_mag_pitch
+align_mag_pitch = 0
+Allowed range: -1800 - 3600
+
+
+# 
+set align_mag_pitch = 7
+align_mag_pitch set to 7
+# 
+get align_mag_pitch
+align_mag_pitch = 7
+Allowed range: -1800 - 3600
+
+
+# 
+get align_mag_yaw
+align_mag_yaw = 0
+Allowed range: -1800 - 3600
+
+
+# 
+set align_mag_yaw = 900
+align_mag_yaw set to 900
+# 
+get align_mag_yaw
+align_mag_yaw = 900
+Allowed range: -1800 - 3600
+
+
+# 
+### read-back check: PASS
+save
+Saving
+Rebooting

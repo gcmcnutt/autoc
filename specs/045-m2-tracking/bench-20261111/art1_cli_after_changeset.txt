@@ -1,0 +1,363 @@
+===== version
+version
+# INAV/MATEKF722MINI 8.0.0 Aug 22 2026 / 16:25:46 (38ff0d29) 
+# GCC-13.2.1 20231009
+
+# 
+===== status
+status
+INAV/MATEKF722MINI 8.0.0 Aug 22 2026 / 16:25:46 (38ff0d29) 
+GCC-13.2.1 20231009
+System Uptime: 209 seconds
+Current Time: 2026-11-11T11:17:03.789-08:00
+Voltage: 0.66V (0S battery - NOT PRESENT)
+CPU Clock=216MHz, GYRO=MPU6000, ACC=MPU6000, BARO=SPL06, MAG=QMC5883
+STM32 system clocks:
+  SYSCLK = 216 MHz
+  HCLK   = 216 MHz
+  PCLK1  = 54 MHz
+  PCLK2  = 108 MHz
+Sensor status: GYRO=OK, ACC=OK, MAG=OK, BARO=OK, RANGEFINDER=NONE, OPFLOW=NONE, GPS=OK
+Stack size: 6144, Stack address: 0x20010000, Heap available: 1820
+I2C Errors: 50, config size: 10885, max available config: 16384
+ADC channel usage:
+   BATTERY : configured = ADC 1, used = ADC 1
+      RSSI : configured = ADC 3, used = none
+   CURRENT : configured = ADC 2, used = none
+  AIRSPEED : configured = ADC 4, used = none
+System load: 13, cycle time: 507, PID rate: 1972, RX rate: 49, System rate: 9
+Arming disabled flags: NAV RX CLI
+  DISABLE NAVIGATION FIRST
+  FIRST WP TOO FAR
+OSD: not enabled
+VTX: not detected
+GPS: HW Version: UBLOX8 Proto: 18.00 Baud: 57600
+  SATS: 13
+  HDOP:  1.370
+  EPH :  1.760 m
+  EPV :  2.650 m
+  GNSS Capabilities:
+    GNSS Provider active/default
+    GPS 1/1
+    Galileo 1/0
+    BeiDou 0/0
+    Glonass 1/1
+    Max concurrent: 3
+
+# 
+===== aux
+aux
+aux 0 0 0 900 1200
+aux 1 1 1 1800 2100
+aux 2 12 1 900 1200
+aux 3 11 3 1300 1700
+aux 4 10 3 1800 2100
+aux 5 30 2 1600 2100
+aux 6 50 4 1600 2100
+aux 7 0 0 900 900
+aux 8 0 0 900 900
+aux 9 0 0 900 900
+aux 10 0 0 900 900
+aux 11 0 0 900 900
+aux 12 0 0 900 900
+aux 13 0 0 900 900
+aux 14 0 0 900 900
+aux 15 0 0 900 900
+aux 16 0 0 900 900
+aux 17 0 0 900 900
+aux 18 0 0 900 900
+aux 19 0 0 900 900
+aux 20 0 0 900 900
+aux 21 0 0 900 900
+aux 22 0 0 900 900
+aux 23 0 0 900 900
+aux 24 0 0 900 900
+aux 25 0 0 900 900
+aux 26 0 0 900 900
+aux 27 0 0 900 900
+aux 28 0 0 900 900
+aux 29 0 0 900 900
+aux 30 0 0 900 900
+aux 31 0 0 900 900
+aux 32 0 0 900 900
+aux 33 0 0 900 900
+aux 34 0 0 900 900
+aux 35 0 0 900 900
+aux 36 0 0 900 900
+aux 37 0 0 900 900
+aux 38 0 0 900 900
+aux 39 0 0 900 900
+
+# 
+===== serial
+serial
+serial 20 1 115200 115200 0 115200
+serial 0 2 115200 57600 0 115200
+serial 1 64 115200 115200 0 115200
+serial 2 32 115200 115200 0 115200
+serial 3 1 115200 115200 0 115200
+serial 5 0 115200 115200 0 115200
+
+# 
+===== feature
+feature
+Enabled: VBAT GPS TELEMETRY BLACKBOX AIRMODE PWM_OUTPUT_ENABLE FW_LAUNCH 
+
+# 
+===== blackbox
+blackbox
+Enabled: NAV_POS ACC ATTI RC_COMMAND MOTORS GYRO_RAW PEAKS_P SERVOS 
+
+# 
+===== diff all
+diff all
+
+# version
+# INAV/MATEKF722MINI 8.0.0 Aug 22 2026 / 16:25:46 (38ff0d29) 
+# GCC-13.2.1 20231009
+
+# start the command batch
+batch start
+
+# reset configuration to default settings
+defaults noreboot
+
+# resources
+
+# Timer overrides
+
+# Outputs [servo]
+
+# safehome
+
+# Fixed Wing Approach
+
+# features
+feature -TX_PROF_SEL
+feature -CURRENT_METER
+feature -OSD
+feature GPS
+feature PWM_OUTPUT_ENABLE
+feature FW_LAUNCH
+
+# beeper
+
+# blackbox
+blackbox -NAV_ACC
+blackbox NAV_POS
+blackbox -NAV_PID
+blackbox -MAG
+blackbox ACC
+blackbox ATTI
+blackbox -RC_DATA
+blackbox RC_COMMAND
+blackbox MOTORS
+blackbox GYRO_RAW
+blackbox -PEAKS_R
+blackbox PEAKS_P
+blackbox -PEAKS_Y
+blackbox SERVOS
+blackbox -QUAT
+
+# Receiver: Channel map
+
+# Ports
+serial 0 2 115200 57600 0 115200
+serial 2 32 115200 115200 0 115200
+serial 3 1 115200 115200 0 115200
+
+# LEDs
+
+# LED color
+
+# LED mode_color
+
+# Modes [aux]
+aux 0 0 0 900 1200
+aux 1 1 1 1800 2100
+aux 2 12 1 900 1200
+aux 3 11 3 1300 1700
+aux 4 10 3 1800 2100
+aux 5 30 2 1600 2100
+aux 6 50 4 1600 2100
+
+# Adjustments [adjrange]
+
+# Receiver rxrange
+
+# temp_sensor
+
+# Mission Control Waypoints [wp]
+#wp 0 invalid
+
+# OSD [osd_layout]
+
+# Programming: logic
+
+# Programming: global variables
+
+# Programming: PID controllers
+
+# OSD: custom elements
+
+# master
+set gyro_main_lpf_hz = 25
+set dynamic_gyro_notch_q = 250
+set dynamic_gyro_notch_min_hz = 30
+set setpoint_kalman_enabled = OFF
+set init_gyro_cal = OFF
+set gyro_zero_x = -35
+set gyro_zero_y = 32
+set gyro_zero_z = 9
+set ins_gravity_cmss =  979.700
+set gyro_adaptive_filter_min_hz = 20
+set acc_hardware = MPU6000
+set acczero_x = 52
+set acczero_y = 25
+set acczero_z = -68
+set accgain_x = 4106
+set accgain_y = 4071
+set accgain_z = 4050
+set align_mag = CW0
+set mag_hardware = QMC5883
+set magzero_x = -271
+set magzero_y = -393
+set magzero_z = -510
+set maggain_x = 1409
+set maggain_y = 1347
+set maggain_z = 1370
+set baro_hardware = SPL06
+set rc_filter_lpf_hz = 250
+set rc_filter_auto = OFF
+set msp_override_channels = 47
+set blackbox_rate_denom = 8
+set motor_pwm_protocol = STANDARD
+set failsafe_delay = 10
+set failsafe_procedure = DROP
+set align_board_roll = 1700
+set align_board_yaw = 900
+set vbat_scale = 1105
+set current_meter_type = NONE
+set servo_lpf_hz = 0
+set small_angle = 180
+set applied_defaults = 4
+set gps_sbas_mode = AUTO
+set gps_dyn_model = AIR_4G
+set gps_ublox_use_galileo = ON
+set gps_ublox_use_glonass = ON
+set airmode_type = STICK_CENTER_ONCE
+set inav_w_z_baro_p =  0.350
+set inav_w_acc_bias =  0.000
+set nav_wp_radius = 1000
+set nav_wp_max_safe_distance = 500
+set nav_rth_allow_landing = FS_ONLY
+set nav_max_altitude = 15000
+set nav_rth_altitude = 5000
+set nav_fw_bank_angle = 75
+set nav_fw_climb_angle = 25
+set nav_fw_dive_angle = 20
+set nav_fw_loiter_radius = 3000
+set fw_loiter_direction = YAW
+set nav_fw_control_smoothness = 2
+set nav_fw_launch_max_angle = 75
+set nav_fw_launch_motor_delay = 100
+set nav_fw_launch_max_altitude = 5000
+set nav_fw_launch_climb_angle = 25
+set debug_mode = VIBE
+set tz_offset = -480
+set tz_automatic_dst = USA
+
+# control_profile
+control_profile 1
+
+set fw_p_pitch = 15
+set fw_i_pitch = 5
+set fw_d_pitch = 5
+set fw_ff_pitch = 70
+set fw_p_roll = 15
+set fw_i_roll = 3
+set fw_d_roll = 7
+set fw_p_yaw = 20
+set fw_i_yaw = 0
+set fw_ff_yaw = 100
+set max_angle_inclination_rll = 750
+set max_angle_inclination_pit = 750
+set dterm_lpf_hz = 10
+set fw_turn_assist_pitch_gain =  0.300
+set nav_fw_pos_z_p = 35
+set nav_fw_pos_xy_p = 70
+set d_boost_min =  1.000
+set d_boost_max =  1.000
+set rc_expo = 0
+set rc_yaw_expo = 30
+set roll_rate = 36
+set pitch_rate = 24
+set yaw_rate = 4
+set manual_rc_expo = 0
+set manual_rc_yaw_expo = 0
+
+# control_profile
+control_profile 2
+
+
+# control_profile
+control_profile 3
+
+
+# mixer_profile
+mixer_profile 1
+
+set platform_type = AIRPLANE
+set model_preview_type = 8
+
+# Mixer: motor mixer
+
+mmix reset
+
+mmix 0  1.000  0.000  0.000  0.000
+
+# Mixer: servo mixer
+smix reset
+
+smix 0 1 0 -100 0 -1
+smix 1 1 1 100 0 -1
+smix 2 2 0 -100 0 -1
+smix 3 2 1 -100 0 -1
+
+# mixer_profile
+mixer_profile 2
+
+
+# Mixer: motor mixer
+
+# Mixer: servo mixer
+
+# battery_profile
+battery_profile 1
+
+set bat_cells = 3
+set battery_capacity = 1000
+set battery_capacity_warning = 300
+set battery_capacity_critical = 150
+set throttle_idle =  5.000
+set nav_fw_cruise_thr = 1500
+set nav_fw_min_thr = 1100
+set nav_fw_max_thr = 2000
+
+# battery_profile
+battery_profile 2
+
+
+# battery_profile
+battery_profile 3
+
+
+# restore original profile selection
+control_profile 1
+mixer_profile 1
+battery_profile 1
+
+# save configuration
+save
+
+# 

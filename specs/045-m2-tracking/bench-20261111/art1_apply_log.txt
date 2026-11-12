@@ -1,0 +1,109 @@
+get gps_ublox_use_galileo
+gps_ublox_use_galileo = OFF
+Allowed values: OFF, ON
+
+
+# 
+set gps_ublox_use_galileo = ON
+gps_ublox_use_galileo set to ON
+# 
+get gps_ublox_use_galileo
+gps_ublox_use_galileo = ON
+Allowed values: OFF, ON
+
+
+# 
+get gps_ublox_use_glonass
+gps_ublox_use_glonass = OFF
+Allowed values: OFF, ON
+
+
+# 
+set gps_ublox_use_glonass = ON
+gps_ublox_use_glonass set to ON
+# 
+get gps_ublox_use_glonass
+gps_ublox_use_glonass = ON
+Allowed values: OFF, ON
+
+
+# 
+get gps_ublox_use_beidou
+gps_ublox_use_beidou = OFF
+Allowed values: OFF, ON
+
+
+# 
+set gps_ublox_use_beidou = OFF
+gps_ublox_use_beidou set to OFF
+# 
+get gps_ublox_use_beidou
+gps_ublox_use_beidou = OFF
+Allowed values: OFF, ON
+
+
+# 
+get gps_dyn_model
+gps_dyn_model = AIR_2G
+Allowed values: PEDESTRIAN, AUTOMOTIVE, AIR_1G, AIR_2G, AIR_4G, SEA, MOWER
+
+
+# 
+set gps_dyn_model = AIR_4G
+gps_dyn_model set to AIR_4G
+# 
+get gps_dyn_model
+gps_dyn_model = AIR_4G
+Allowed values: PEDESTRIAN, AUTOMOTIVE, AIR_1G, AIR_2G, AIR_4G, SEA, MOWER
+
+
+# 
+get init_gyro_cal
+init_gyro_cal = ON
+Allowed values: OFF, ON
+
+
+# 
+set init_gyro_cal = OFF
+init_gyro_cal set to OFF
+# 
+get init_gyro_cal
+init_gyro_cal = OFF
+Allowed values: OFF, ON
+
+
+# 
+get inav_w_acc_bias
+inav_w_acc_bias =  0.010
+Allowed range: 0 - 1
+
+
+# 
+set inav_w_acc_bias = 0.000
+inav_w_acc_bias set to  0.000
+# 
+get inav_w_acc_bias
+inav_w_acc_bias =  0.000
+Allowed range: 0 - 1
+
+
+# 
+get ins_gravity_cmss
+ins_gravity_cmss =  979.910
+Allowed range: 0 - 2000
+
+
+# 
+set ins_gravity_cmss = 979.700
+ins_gravity_cmss set to  979.700
+# 
+get ins_gravity_cmss
+ins_gravity_cmss =  979.700
+Allowed range: 0 - 2000
+
+
+# 
+### read-back check: PASS
+save
+Saving
+Rebooting
