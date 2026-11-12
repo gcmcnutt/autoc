@@ -1,5 +1,44 @@
 # 045 — Bench checklist (itemized)
 
+## ▶ Operator TODO — next time at the bench (kept current; updated 2026-11-12)
+
+The desk work for these is done; each needs the article, the TX, a phone, the outdoors, or the admin AWS profile. Task IDs are
+in [tasks.md](tasks.md); results go in `bench-results-YYYYMMDD.md` and the [MANIFEST](MANIFEST.md).
+
+**State of the hardware**: the article 1 xiao runs the **045 dev firmware** (BLE download v2, USB console `LIST` / `DUMP:` /
+`QPROF`), not the 11-08 build; its log still holds `flight_001.bin` (11-08). The FC carries the 11-11/12 bench change set, which is
+not yet in `xiao/inav-hb1.cfg`. The page that matches the firmware is the current `xiao/web/flight_logger.html` (v1 is gone).
+
+**[USB] / phone — BLE download (US2)**
+- [ ] **T017 / T023 phone**: with the **field phone** and with the **Windows / Edge laptop**, phone ~3 m from the aircraft,
+  download `flight_001.bin` with the new page. Target < 60 s (Linux measured 19 s). Walk out of range mid-download, come back,
+  reconnect, press Download again ⇒ it resumes. If anything is slow or fails: **Copy log** and paste it back.
+- [ ] **T023 arm mid-download** (TX on, motor disconnected): start a download, arm ⇒ BLE drops at once and the xiao's console shows
+  normal MSP polling again.
+
+**[USB] — calibration and configuration (US4)**: T034 (A7 receiver failsafe mode, A8 boot banner), T035 (C3 accel 6-point + 12
+poses, `cal_verify.py accel`), T036 (C4 gyro zero / gravity; `init_gyro_cal` OFF), T037 (C5 gyro scale, CW + CCW turn pairs),
+T038 (C6 panel tilts → `align_mag_*`, before T044), T039 (C7 xiao orientation photo).
+
+**[SERVO], motor disconnected — safety "before" record (US7-A)**
+- [ ] **T056**: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
+  vs DROP in RAM only (never saved), with pilot-action counts and timings. H5 (MSP flood) stays held.
+
+**[PROP], restrained (US4 / US5)**: T040 (D1 mount survey, `mount_survey.py`), T041 (D2 compass vs current + servo sweep, I2C
+errors via `msp_bench_read.py --watch`), T042 (D3 baro; D4 C/N0 via CLI `gpssats`, xiao on vs off, motor off vs on), T051 (blackbox
+MAG + NAV_ACC on, `debug_mode` VIBE kept, `blackbox_rate_denom` 8 / 16 / 32 with the motor running, no dropped frames; 1:32 is OK).
+
+**[OUT]**: T043 (E1–E3 GNSS active, 10 Hz, 10 min static → `inav_default_alt_sensor`), T044 (E4 dip / |m| at N/E/S/W, compass
+calibration, 8 bearings; check the declination sign first), T054 (satellite-block test with autoc engaged, motor disconnected).
+
+**Then**: T049 (apply and read back the final change set; approve writing it into `xiao/inav-hb1.cfg`), T050 (article 2, only if it
+flies).
+
+**Not bench — needs the admin AWS profile**: T009, T013 (`s3_egress_check.py --profile <admin> --run <id> --day 2026-11-12` for
+mini runs A and B; run IDs in the MANIFEST), T113 (month-end egress < 100 GB).
+
+---
+
 What to check at the bench, before `/speckit.tasks` fixes the work. Each item says what it settles, how to do it, and when it can
 be done. Procedures with more steps are in [quickstart.md](quickstart.md); the reasoning is in [research.md](research.md).
 
