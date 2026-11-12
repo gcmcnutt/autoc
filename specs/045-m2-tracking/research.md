@@ -49,8 +49,61 @@ Attitude error over a span from an un-aided gyro, per error source:
 | sampling / coning | rate² × dt² terms; the integrator rate | small at ≥ 1 kHz; visible at 240 Hz (the ~3° floor above) | integrate at ≥ 1 kHz on raw samples |
 | vibration rectification | foam-tape mount resonances × rate | unknown (R7: cannot be measured at 240 Hz) | measure first |
 
-⚠️ Datasheet values (scale tolerance, cross-axis, g-sensitivity) for MPU6000 (article 1 FC), ICM42688P (article 2 FC) and the
-xiao's LSM6DS3TR-C are owed in the N1 task. The table shows the shape of the budget; it does not certify a part.
+### Datasheet error terms (N1 / T027, 2026-11-12)
+
+From memory of the manufacturers' datasheets; **no web access during this task**. Every value marked *(confirm)* is a datasheet
+value to confirm before it carries a decision. MPU6000: InvenSense PS-MPU-6000A rev 3.4, § 6.1 (gyroscope) / § 6.2 (accelerometer).
+ICM42688P: TDK DS-000347, gyroscope / accelerometer specification tables. LSM6DS3TR-C: ST datasheet, Table 3 (mechanical
+characteristics).
+
+| term | MPU6000 (article 1 FC) | ICM42688P (article 2 FC) | LSM6DS3TR-C (xiao) |
+|---|---|---|---|
+| gyro scale-factor tolerance (25 °C) | ±3 % | ±0.5 % | ±1 % *(confirm)* |
+| gyro scale vs temperature | ±2 % over −40…85 °C | ±0.005 %/°C *(confirm)* | ±0.007 %/°C *(confirm)* |
+| gyro nonlinearity | 0.2 % (best-fit line) | ±0.1 % | ±0.01 % FS *(confirm)* |
+| gyro cross-axis sensitivity | ±2 % | ±1.25 % | not specified *(confirm)* |
+| initial zero-rate output | ±20 °/s | ±0.5 °/s | ±3 °/s *(confirm)* |
+| zero-rate vs temperature | ±20 °/s over −40…85 °C | ±0.005 °/s/°C *(confirm)* | ±0.05 °/s/°C *(confirm)* |
+| linear-acceleration (g) sensitivity | 0.1 °/s/g | not specified *(confirm)* | not specified *(confirm)* |
+| rate noise density | 0.005 °/s/√Hz | 0.0028 °/s/√Hz | 0.005 °/s/√Hz *(confirm)* |
+| gyro range / max output rate | ±2000 °/s / 8 kHz | ±2000 °/s / 32 kHz | ±2000 °/s / 6.66 kHz |
+| accel scale tolerance / cross-axis | ±3 % / ±2 % | ±0.5 % / ±1 % | ±1 % / — *(confirm)* |
+| accel noise density | 400 µg/√Hz | 70 µg/√Hz | 90 µg/√Hz *(confirm)* |
+
+**Per-part budget over a span** (net pitch 1000–1350°, other axes ~2000° gross, mean |f| 2.4–3.9 g, 20 s; "calibrated" = a bench
+turn test plus temperature held within ±10 °C):
+
+| term | MPU6000 | ICM42688P | LSM6DS3TR-C |
+|---|---|---|---|
+| scale, raw tolerance | 30–40° | 5–7° | 10–13° *(confirm)* |
+| scale, calibrated (nonlinearity + ±10 °C drift) | ~0.3 % → 3–4° | ~0.1 % → 1.1–1.5° | ~0.1 % → 1–1.4° *(confirm)* |
+| cross-axis, raw (partly cancelling) / after a misalignment calibration | up to ~40° / ~2° | up to ~25° / ~2° | unknown / ~2° |
+| g-sensitivity | 0.1 °/s/g × ~3 g × 20 s ≈ 6° | unknown | unknown |
+| bias after a per-session zero (residual ~0.1 / 0.02 / 0.1–0.3 °/s) | ~2° | ~0.4° | 2–6° *(confirm)* |
+| angle random walk (noise density × √20 s) | 0.02° | 0.01° | 0.02° |
+| **calibrated total (RSS)** | **~7–8°** | **~2.5–4°** (+ g-sensitivity) | **~3–7°** *(confirm)* |
+
+No part reaches < 1° un-aided, even calibrated. On article 1's MPU6000, the un-calibrated g-sensitivity alone is several degrees.
+Bench evidence for bias: article 1's boot gyro zeros moved 5–10 LSB between boots (0.3–0.6 °/s; bench-results-20261111.md), so a
+per-session recorded zero matters, and N4 must estimate bias in-filter.
+
+### N1 result (2026-11-12, [drift-report.md](drift-report.md))
+
+- **The GPS reference is invalid above ~2 g on these flights.** The GPS-implied |specific force| / IMU ratio falls from ≈ 1.0 at
+  1.5–2 g to 0.55–0.63 above 5 g, on all three logs, with no attitude involved. That is the receiver's AIR_2G dynamic model.
+  Attitude was therefore checked only at the low-load moments inside the spans. The reference noise there (3–6 m/s² per 100 ms
+  interval, 15–25° of direction) gives σ = 6–30° per whole-span fit.
+- **INAV vs gyro-only**: statistically indistinguishable in all 11 spans (≤ 1 σ). They disagree with each other by 0.6–14.6° inside
+  the spans, and by 4.7–12.7° at 17 s. The logs cannot say which one drifted.
+- **INAV heading in cruise**: −8.6 to −18.8° in the five best-constrained pre-engage windows (σ 3–5°). Tilt there is 1–7°
+  (unresolved). Close to the site declination in magnitude, so the sign convention and the in-flight declination are checked
+  before attributing it to the compass (R19).
+- **Span-local IMU velocity / position**: 5–53 m/s and 45–636 m off by span end with either attitude source. An accelerometer scale
+  error of ~1.5 % at 3 g alone gives ~9 m/s over 20 s. ⇒ The companion frame must be GNSS-aided for velocity and position too.
+- **Aided-filter floor (estimate, not measured)**: ≈ 20° / √(60–75 low-load intervals per span) ≈ **2–3°** on AIR_2G. Updates
+  must be gated above the receiver's dynamic limit. AIR_4G and multi-GNSS should improve it: re-measure on the re-fly with the same
+  scripts.
+- **Decision 4 outcome**: the working target for N4 is **smooth (no internal resets) and ≲ 3°**, with 1° kept as the design aim.
 
 ### Decision
 
@@ -70,7 +123,7 @@ xiao's LSM6DS3TR-C are owed in the N1 task. The table shows the shape of the bud
    filter state), and the board-to-airframe alignment (FR-007b).
 4. **The < 1° target is revisited with the N1 numbers.** Its purpose is a stable path frame. A path that drifts smoothly by a few
    degrees is tolerable; a reset is not (spec § Why). If N1 shows 2–3° smooth drift is the realistic floor, the target becomes
-   "smooth and < 3°", with the 1° number kept as the design aim.
+   "smooth and < 3°", with the 1° number kept as the design aim. **Outcome (N1, 2026-11-12): adopted**. See § N1 result above.
 
 ### Alternatives considered
 

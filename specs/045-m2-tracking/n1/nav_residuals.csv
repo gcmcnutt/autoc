@@ -1,0 +1,7 @@
+set,axis,n_ticks,p50_m,p99_m,p99_9_m,max_m
+clean,horizontal,4523,0.14,0.54,0.74,1.00
+clean,vertical,4523,0.07,0.54,1.38,1.59
+near_faults,horizontal,91,0.00,11.67,96.82,106.28
+near_faults,vertical,91,0.18,84.46,99.34,100.99
+all,horizontal,4614,0.14,0.57,0.86,106.28
+all,vertical,4614,0.07,0.59,1.57,100.99

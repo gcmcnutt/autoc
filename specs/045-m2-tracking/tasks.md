@@ -212,29 +212,29 @@ on *disarmed and downloading*.
 **Goal**: the N1 drift report and the attitude-stability budget (FR-006, FR-006a, SC-003), offline on the committed logs.
 **Independent test**: the report reproduces from the committed tools and the 11-08 / 10-18 logs.
 
-- [ ] T024 [P] [US3] `specs/045-m2-tracking/span_attitude.py`: add the GPS-derived specific-force reference per window (the
+- [X] T024 [P] [US3] `specs/045-m2-tracking/span_attitude.py`: add the GPS-derived specific-force reference per window (the
   `nav_accel_fit.py` method: GPS-differentiated acceleration plus gravity in the earth frame, against the body specific force
   rotated by each attitude source). Report the attitude error of INAV and of gyro-only-from-engage at 5 / 10 / 17 s / end per span.
   State the reference's own uncertainty (10 Hz GPS differentiation noise, fitted lag). Take the flights and spans as CLI options,
   with today's two flights as the defaults. Write `specs/045-m2-tracking/n1/attitude_drift.csv`
-- [ ] T025 [P] [US3] `specs/045-m2-tracking/nav_dead_reckon.py`: add a `--span` mode. It propagates velocity and position from
+- [X] T025 [P] [US3] `specs/045-m2-tracking/nav_dead_reckon.py`: add a `--span` mode. It propagates velocity and position from
   engage, span-local, with the body specific force rotated by INAV attitude and by gyro-only attitude, at the 240 Hz blackbox
   rate, against GPS, reported at 5 / 10 / 17 s / end. Write `specs/045-m2-tracking/n1/nav_drift.csv`
-- [ ] T026 [P] [US3] INAV fault inventory per span. Run `specs/045-m2-tracking/nav_span_scan.py` on the T003 CSVs, and add a
+- [X] T026 [P] [US3] INAV fault inventory per span. Run `specs/045-m2-tracking/nav_span_scan.py` on the T003 CSVs, and add a
   **blackbox mode** to it that scans navPos / navVel / navEPH / navEPV / numSat: freezes, resets and steps, with times and
   magnitudes. Emit the per-tick residual distributions |Δpos − v̄·Δt| (horizontal and vertical) that set the STEP / FROZEN
   thresholds. Write `specs/045-m2-tracking/n1/faults.csv`. US5's T053 builds the flag output on this mode
-- [ ] T027 [P] [US3] Datasheet error terms into research.md R4 for MPU6000 (article 1 FC), ICM42688P (article 2 FC) and
+- [X] T027 [P] [US3] Datasheet error terms into research.md R4 for MPU6000 (article 1 FC), ICM42688P (article 2 FC) and
   LSM6DS3TR-C (xiao): gyro scale tolerance and nonlinearity, cross-axis, bias instability and temperature drift, g-sensitivity,
   noise density, range and ODR. Fill the budget table per source and per term
-- [ ] T028 [US3] Write `specs/045-m2-tracking/drift-report.md`, the N1 report of record (data-model § Drift report):
+- [X] T028 [US3] Write `specs/045-m2-tracking/drift-report.md`, the N1 report of record (data-model § Drift report):
   - per flight × span × source: the R3 columns, attitude drift, velocity and position drift, and INAV's faults;
   - the AS2 answer: the better source in sustained high-load manoeuvres, by how much, with the reference's uncertainty;
   - the attitude-stability budget for each candidate (INAV AHRS, xiao gyro + GNSS-velocity-aided filter, an on-chip-fusion part),
     whether < 1° over a span is reachable, and its error sources (FR-006a);
   - the R4 decision 4 revisit: keep < 1°, or "smooth and < 3°" with 1° kept as the design aim;
   - the reproduction commands (SC-003)
-- [ ] T029 [US3] Pin values from N1 into `drift-report.md` § Pinned values and `data-model.md`: the FROZEN / STEP thresholds
+- [X] T029 [US3] Pin values from N1 into `drift-report.md` § Pinned values and `data-model.md`: the FROZEN / STEP thresholds
   (consumed by T053) and the `inav_max_eph_epv` value (research R5: 2000–3000 cm, set from the measured coast durations;
   consumed by T033)
 
@@ -310,6 +310,8 @@ reviewable against the configuration of record.
   - the outdoor compass calibration if they are not;
   - a second logged tumble through `cal_verify.py` (residual hard and soft iron);
   - heading at 8 known bearings < 5°.
+  - N1 found an INAV heading offset of −8.6 to −18.8° in pre-engage cruise; its size is close to the site's 12.9° declination,
+    so check the declination sign / auto-declination before blaming the compass (drift-report.md).
 
   Rows in `config-changeset-art1.md`
 

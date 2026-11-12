@@ -46,6 +46,22 @@ git show 043-final:src/analytics/flightlog_decode.py > /tmp/flightlog_decode_043
 for B in flight-results/flight-20261018/flight_log_*.bin; do python3 -I /tmp/flightlog_decode_043.py "$B" -o "${B%.bin}.csv"; done
 ```
 
+## § N1 drift report (US3, T024–T029, 2026-11-12)
+
+[`drift-report.md`](drift-report.md) + [`n1/`](n1/). Headlines: the GPS specific-force reference is invalid above ~2 g on all three
+logs (AIR_2G), so attitude drift is not resolvable below ~10° and neither INAV nor gyro-only is shown better under load; the
+span-local IMU propagator drifts 45–636 m by span end, so any companion frame needs GNSS aiding; the 11-08 freeze began when 5 sats
+fell below `gps_min_sats` 6; < 1° is not reachable by any un-aided source, working target "smooth and ≲ 3°". Pinned: FROZEN ≥ 2
+ticks, STEP_XY 5 m, STEP_Z 5 m, `inav_max_eph_epv` 3000 cm. Reproduce (10-18 log `.02` needs decoding first; decodes are not
+tracked):
+
+```bash
+~/blackbox-tools/obj/blackbox_decode --index 2 flight-results/flight-20261018/blackbox_log_2026-10-18_125223.TXT
+python3 specs/045-m2-tracking/span_attitude.py
+python3 specs/045-m2-tracking/nav_dead_reckon.py --span
+python3 specs/045-m2-tracking/nav_span_scan.py --blackbox
+```
+
 ## § Change sets
 
 *(T033 / T049: article 1; T050: article 2.)*

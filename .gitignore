@@ -13,10 +13,10 @@ logs/
 # so they are NOT tracked (operator 2026-10-04). The .TXT is the source of truth.
 # Pre-existing decoded CSVs in older flight-results/ dirs stay tracked -- these
 # rules only stop new ones being added.
-flight-results/**/*.01.csv
-flight-results/**/*.01.gps.csv
-flight-results/**/*.01.gps.gpx
-flight-results/**/*.01.event
+flight-results/**/*.[0-9][0-9].csv
+flight-results/**/*.[0-9][0-9].gps.csv
+flight-results/**/*.[0-9][0-9].gps.gpx
+flight-results/**/*.[0-9][0-9].event
 # Decoded xiao flight logs: regenerable from the tracked .bin (decoder per version tag: 045 MANIFEST § Preservation).
 flight-results/**/flight_log_*.csv
 nn_weights.dat

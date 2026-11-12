@@ -33,9 +33,14 @@ article, level reference** (flat wing bottom) and **conditions** (outdoor, away 
 | `gps_age_ms` | u16 | now − `posEstimator.gps.lastUpdateTime` |
 | `fault_flags` | u8 bits: INVALID_XY, INVALID_Z, FROZEN, STEP_XY, STEP_Z, GPS_STALE (> 200 ms), LOW_SATS (< 6) | derived on the xiao |
 
-- **FROZEN**: armed and engaged, horizontal velocity exactly 0 and position unchanged versus the previous tick.
-- **STEP**: |Δpos − v̄·Δt| > 5 m horizontal / 3 m vertical in one tick. The thresholds are provisional; N1 sets them from the
-  11-08 / 10-18 residual distributions.
+- **FROZEN**: armed and engaged, horizontal velocity exactly 0 and position unchanged versus the previous tick, for **≥ 2
+  consecutive ticks** (0.1 s at 20 Hz). *Pinned by N1 (drift-report.md § Pinned values, 2026-11-12)*: in 4614 engaged ticks across
+  11 spans, the only occurrence is the 11-08 span-1 freeze (2.30 s).
+- **STEP**: |Δpos − v̄·Δt| > **5 m horizontal / 5 m vertical** in one 50 ms tick. *Pinned by N1*. The clean-tick residual maxima
+  are 1.00 m horizontal and 1.59 m vertical (p99.9 0.74 / 1.38 m, `n1/nav_residuals.csv`); the real faults are 106 m (XY) and
+  25–101 m (Z). The vertical threshold moved from the provisional 3 m, which left < 2× margin over clean data.
+- Until the per-tick companion flags land, `nav_span_scan.py --blackbox` applies these same definitions to the blackbox, resampled
+  to 20 Hz (`n1/faults.csv`).
 - Flags never feed engagement, disengagement or the NN (FR-012). A test asserts that the policy output is bit-identical with flags
   forced on and off.
 
