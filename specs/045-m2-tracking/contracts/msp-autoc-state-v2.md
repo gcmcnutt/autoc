@@ -22,7 +22,7 @@ rejects any other length.
 | **66** | **est_epv** | u16 | cm (saturating) | new |
 | **68** | **est_flags** | u8 | bit0 XY_VALID, bit1 Z_VALID, bit2 GPS_XY_VALID, bit3 GPS_Z_VALID, bit4 BARO_VALID | new |
 | **69** | **gps_numsat** | u8 | — | new |
-| **70** | **gps_fix** | u8 | 0 none / 2 2D / 3 3D | new |
+| **70** | **gps_fix** | u8 | INAV `gpsFixType_e`: 0 none / 1 2D / 2 3D | new |
 | **71** | **acc_weight** | u8 | × 100 | new |
 | **72** | **gps_age_ms** | u16 | ms since last GPS update (saturating) | new |
 | **74** | **layout_version** | u8 | = 2 | new |

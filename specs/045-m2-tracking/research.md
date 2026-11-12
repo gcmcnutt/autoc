@@ -449,8 +449,8 @@ recorded as known errors for the R4 budget, and the companion frame (N4) can cor
 | **accelerometer** | 6-point on the levelled article | static poses in **≥ 12 orientations** (the 6 faces plus 6 diagonals, 10 s each, blackbox ACC); an offline ellipsoid fit gives the residual offset, scale and **cross-axis** terms | \|f\| = 1.000 ± 0.005 g in every pose; cross-axis < 1 % (else record) |
 | **board alignment** (roll / pitch) | `align_board_*` until attitude reads 0 / 0 on the level reference | (a) level-boot gravity on the reference; (b) the re-fly's in-flight fit (`nav_accel_fit.py`: roll / pitch sign and heading offset) | ≤ 0.3° on the bench; in-flight best offset ≈ 0° |
 | **board alignment** (yaw) | the FC mounting arrow vs the fuselage centreline, measured | in flight: GPS course vs AHRS heading in straight, unaccelerated flight (`nav_heading_check.py`, constant term) | constant offset < 3° after wind crab |
-| **gyro zero** | recorded level and still, per session (`init_gyro_cal = OFF`) | 60 s static log: the residual mean rate per axis | < 0.05 °/s |
-| **gyro scale factor** | INAV has no gyro scale calibration | 10 turns per axis on a jig: ∫gyro vs N·360° | record per axis; > 0.5 % ⇒ note in the R4 budget (INAV can't correct it; N4 can) |
+| **gyro zero** | recorded level and still, per session (`init_gyro_cal = OFF`) | 60 s static log: the residual mean rate per axis. ⚠️ The blackbox logs gyro as **integer °/s** (`blackbox.c:1674-1676`), so a quiet static sensor cannot resolve 0.05 °/s; `cal_verify.py` marks that UNRESOLVED. Resolve it with a longer window if the noise dithers the LSB, or from MSP raw IMU reads (2026-11-12) | < 0.05 °/s |
+| **gyro scale factor** | INAV has no gyro scale calibration | 10 turns per axis on a jig: ∫gyro vs N·360°, as a CW + CCW pair so the bias and the integer quantization cancel | record per axis; > 0.5 % ⇒ note in the R4 budget (INAV can't correct it; N4 can) |
 | **compass alignment** | explicit `align_mag_*` from the measured module orientation | heading at 8 known bearings on the ground, nose level | < 5° everywhere |
 | **compass calibration** | outdoor tumble, away from metal | log MAG (blackbox) through a second outdoor tumble; offline ellipsoid fit ⇒ residual hard-iron and **soft-iron** | \|m\| variation < 5 % over the sphere; soft-iron recorded |
 | **compass vs motor current** | — | bench, props on, restrained: heading drift vs throttle 0 → 100 % (logged MAG + motor) | < 5° at full throttle, else move the mast / twist the battery and ESC leads, or note it |
@@ -690,7 +690,7 @@ The configuration of record applies `align_mag = CW0` **then** board alignment *
   servo or power leads in that bundle can produce several µT at this distance. ⇒ Add a **servo sweep** to D2 (heading drift with
   the servos cycling, motor off).
 - **GPS noise floor**: the FC (216 MHz), the xiao (BLE off in flight, but its clock and flash), the SPI flash and the receiver sit
-  under the patch antenna. ⇒ New bench item: per-satellite **C/N0** (MSP_GPSSVINFO) with the xiao powered vs unpowered, motor off
+  under the patch antenna. ⇒ New bench item: per-satellite **C/N0** (CLI `gpssats` or u-center; `MSP_GPSSVINFO` is a stub in INAV 8.0) with the xiao powered vs unpowered, motor off
   vs running. A drop of several dB-Hz means EMI is costing satellites, and that showed up as drops in pulls on 11-08.
 - Mitigations if needed (hardware, operator's call): raise the GPS on a short mast, add a ground-plane shim under it, route the
   bundle away from under the module, twist the battery leads end to end.

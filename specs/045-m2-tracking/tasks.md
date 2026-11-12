@@ -251,7 +251,7 @@ reviewable against the configuration of record.
 
 ### Tooling
 
-- [ ] T030 [P] [US4] `specs/045-m2-tracking/cal_verify.py` (research R6b), on a `blackbox_decode` CSV:
+- [X] T030 [P] [US4] `specs/045-m2-tracking/cal_verify.py` (research R6b), on a `blackbox_decode` CSV:
   - static-pose segmentation;
   - accel ellipsoid fit (offset, scale, cross-axis) and |f| per pose;
   - the gyro's static residual mean per axis;
@@ -260,11 +260,11 @@ reviewable against the configuration of record.
   - heading at known bearings.
 
   It prints each R6b pass criterion with PASS / FAIL
-- [ ] T031 [P] [US4] `specs/045-m2-tracking/mount_survey.py` (research R7): per-axis spectra from a denom-1 blackbox (GYRO_RAW +
+- [X] T031 [P] [US4] `specs/045-m2-tracking/mount_survey.py` (research R7): per-axis spectra from a denom-1 blackbox (GYRO_RAW +
   ACC). It separates peaks that track motor RPM / throttle from fixed mount modes and writes a per-board table
-- [ ] T032 [P] [US4] `specs/045-m2-tracking/msp_bench_read.py`: add per-satellite C/N0 (`MSP_GPSSVINFO`) for checklist D4, and a
+- [X] T032 [P] [US4] `specs/045-m2-tracking/msp_bench_read.py`: add per-satellite C/N0 (`MSP_GPSSVINFO`) for checklist D4, and a
   `--watch` mode that logs the I2C error count from MSP status (A10)
-- [ ] T033 [US4] Create `specs/045-m2-tracking/config-changeset-art1.md` (data-model § Configuration change set). First, the rows
+- [X] T033 [US4] Create `specs/045-m2-tracking/config-changeset-art1.md` (data-model § Configuration change set). First, the rows
   already on the FC from bench-results-20261111.md (GNSS, AIR_4G, `init_gyro_cal`, `inav_w_acc_bias`, `ins_gravity_cmss`,
   `gyro_zero_*`, `align_board_*`, `align_mag_*`), each with class, evidence, read-back and trained-on effect, plus article 1's
   receiver record (SAM-M8Q, ROM 3.01, max 3 concurrent GNSS: FR-008, AS2). Then the pending rows: `inav_max_eph_epv` (T029),
@@ -297,7 +297,7 @@ reviewable against the configuration of record.
   points; analyse with `mount_survey.py`; results in `bench-results-YYYYMMDD.md`
 - [ ] T041 [US4] (operator) [PROP] D2: heading drift across the throttle range, and with the servos sweeping and the motor off (MAG
   logged); the I2C error count under motor load (`msp_bench_read.py --watch`, A10). Results in `bench-results-YYYYMMDD.md`
-- [ ] T042 [US4] (operator) [PROP] D3 + D4: the baro's prop-wash step and a 10 min static baro drift; per-satellite C/N0 with the
+- [ ] T042 [US4] (operator) [PROP] D3 + D4: the baro's prop-wash step and a 10 min static baro drift; per-satellite C/N0 via the CLI `gpssats` command (disarmed; leaving the CLI with `exit` reboots the FC) or u-center through `gpspassthrough`. INAV 8.0's `MSP_GPSSVINFO` is a stub that reports no satellites (found 2026-11-12); `msp_bench_read.py --svinfo` falls back to sats / HDOP / EPH, with the
   xiao powered vs unpowered and the motor off vs running. Results in `bench-results-YYYYMMDD.md`
 - [ ] T043 [US4] (operator) [OUT] E1 + E2 + E3, outdoors:
   - after save + reboot, `status` shows GPS + Galileo + GLONASS active;
@@ -318,7 +318,9 @@ reviewable against the configuration of record.
 - [ ] T045 [US4] The FR-007 review table in `config-changeset-art1.md`. Class every changed setting as A / B-accuracy / B-delay /
   C / D / E / hardware, with evidence and its effect on what the policy was trained on. For example, the board-alignment change is
   B-accuracy: it removes the 3.7° nose-up bias in the quaternion inputs. Confirm there is no class A or B-delay change (FR-017)
-  and no class D (failsafe) change. State the calibration policy (FR-007a)
+  and no class D (failsafe) change. ⚠️ **Operator decision owed**: the board-alignment change (row 9) also rotates the rate
+  loop's gyro axes by 3.6° (it removes ~6 % roll↔yaw coupling). The sim already assumes aligned axes, so it moves flight toward
+  what g800 trained on (FR-017's "the simulator models it first"). Recorded as accuracy-class unless the operator rules it class A. State the calibration policy (FR-007a)
 - [ ] T046 [US4] The FR-007b mount review per board (FC, xiao, GPS / compass), from T040 plus the level-boot gravity: resonance
   frequency and axis, and the alignment result, in `config-changeset-art1.md`. A mount change is hardware hygiene, recorded as
   A/B-able on the next flight. It is not a re-fly hold unless it saturates a sensor

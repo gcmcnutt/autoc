@@ -75,7 +75,8 @@ GETs by construction. ⏳ External confirmation from the S3 access logs: `s3_egr
 **US1 mini run B (T013, write-through = SC-001's local half)**: `logs/autoc-045-t0-cache-smoke-b.log`, run
 `autoc-9223370242346471150-2026-11-12T18:31:44.657Z`, trained with `AUTOC_DMP_CACHE` set. Training wrote all 10 entries through.
 Report pass 1 (25 s) and pass 2 with `--no-cache` (19 s) left the cache byte-identical ⇒ **zero fetches of the run's own dmps**.
-⏳ The access-log confirmation and the month-end egress (T113) are the operator's. Sweep on the real cache: `--days 30` keeps both
+⏳ **Held open (operator 2026-11-12):** the access-log confirmation for T009 / T013 and the month-end egress (T113) wait until
+the operator is at a host with the admin profile; the training box cannot read `autoc-s3-access-logs`. Sweep on the real cache: `--days 30` keeps both
 runs (fresh `retain=expire`); `--days 0` (dry run) would remove both (20 files, 0.28 GB).
 
 ## § Gates

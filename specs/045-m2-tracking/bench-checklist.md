@@ -80,7 +80,7 @@ to this file.
 
 - [ ] **D1 Mount survey**: blackbox denom 1, GYRO_RAW + ACC; throttle sweep + steady points (R7).
 - [ ] **D2 Compass vs current**: heading drift across the throttle range **and with the servos sweeping, motor off** (MAG logged). The compass is 2.5 cm above the FC and bundle, and ~12 cm from the battery lead (R19).
-- [ ] **D4 GPS noise floor**: per-satellite C/N0 (MSP_GPSSVINFO) with the xiao powered vs unpowered, and motor off vs running (R19). Read-only except the power changes.
+- [ ] **D4 GPS noise floor**: per-satellite C/N0 via the CLI `gpssats` command (disarmed; leaving the CLI with `exit` reboots the FC) or u-center through `gpspassthrough`. INAV 8.0's `MSP_GPSSVINFO` is a stub that reports no satellites (found 2026-11-12); `msp_bench_read.py --svinfo` falls back to sats / HDOP / EPH, with the xiao powered vs unpowered, and motor off vs running (R19). Read-only except the power changes.
 - [ ] **D3 Baro prop-wash step**: the baro altitude change at run-up.
 
 ## E. Outdoors — [OUT]
