@@ -9,6 +9,11 @@ in [tasks.md](tasks.md); results go in `bench-results-YYYYMMDD.md` and the [MANI
 `QPROF`), not the 11-08 build; its log still holds `flight_001.bin` (11-08). The FC carries the 11-11/12 bench change set, which is
 not yet in `xiao/inav-hb1.cfg`. The page that matches the firmware is the current `xiao/web/flight_logger.html` (v1 is gone).
 
+**Desk review (any time)**: read [`pilot-brief.md`](pilot-brief.md) before the next flight (⚠️ new finding: after a
+receiver-loss DROP the surfaces hold the **xiao's last command** until the link returns, not your sticks); approve or reorder the
+proposed steps in [`safety-ladder.md`](safety-ladder.md); skim [`fault-timelines.md`](fault-timelines.md), whose bench cells T056
+fills.
+
 **[USB] / phone — BLE download (US2)**
 - [ ] **T017 / T023 phone**: with the **field phone** and with the **Windows / Edge laptop**, phone ~3 m from the aircraft,
   download `flight_001.bin` with the new page. Target < 60 s (Linux measured 19 s). Walk out of range mid-download, come back,
