@@ -328,7 +328,7 @@ reviewable against the configuration of record.
 - [ ] T046 [US4] The FR-007b mount review per board (FC, xiao, GPS / compass), from T040 plus the level-boot gravity: resonance
   frequency and axis, and the alignment result, in `config-changeset-art1.md`. A mount change is hardware hygiene, recorded as
   A/B-able on the next flight. It is not a re-fly hold unless it saturates a sensor
-- [ ] T047 [US4] FR-010 / AS4. Confirm research.md R8 holds the per-dependency table: rate loop, state to the companion and
+- [X] T047 [US4] FR-010 / AS4. Confirm research.md R8 holds the per-dependency table: rate loop, state to the companion and
   fallback × "depends on INAV's nav estimate?" × the gates applied during autoc, plus the reduced-role design (built after G2). Add
   the table to R8 if any column is missing. File "build the reduced-role INAV" in `specs/BACKLOG.md`
 - [X] T048 [US4] Correct the wrong comment at `xiao/src/msplink.cpp:1093-1095` (comment only; no code change). MANUAL is on RC6,
@@ -379,7 +379,7 @@ blackbox, and the policy keeps flying exactly as before.
 - [ ] T054 [US5] (operator) [OUT] SC-005, the satellite-block test (quickstart § 7, checklist E5): 3D fix and ≥ 8 sats, armed in
   bench mode, autoc engaged, motor disconnected, blackbox at the T051 settings. Cover the antenna for ~15 s. Then the tool flags
   LOW_SATS, the EPH growth, the freeze and the step on reacquire, and engagement is unchanged. Record in `bench-results-YYYYMMDD.md`
-- [ ] T055 [P] [US5] `specs/BACKLOG.md`: per-tick companion fault flags deferred (state message v2, flight log v7 tick fields, an
+- [X] T055 [P] [US5] `specs/BACKLOG.md`: per-tick companion fault flags deferred (state message v2, flight log v7 tick fields, an
   on-board derivation). The contracts are the design of record. A revived v2 also needs `failsafe_phase`, receiver-signal flags and
   box bits 32–63 (R16 B-5; bench A3: MSP RC OVERRIDE is bit 40)
 
@@ -399,7 +399,7 @@ failsafe debate's inputs. Nothing here changes firmware or a saved setting.
   also the bench test of **today's** in-flight re-arm paths (B6 after DROP, B9 emergency arming): each one timed, with its pilot
   action count. H5 (MSP
   flood) stays on hold until a verified hard power cycle exists. Results in `bench-results-YYYYMMDD.md`
-- [ ] T057 [P] [US7] Trace ANGLE's recovery path from inverted and from vertical in the fork (`~/inav/src/main/flight/pid.c` level
+- [X] T057 [P] [US7] Trace ANGLE's recovery path from inverted and from vertical in the fork (`~/inav/src/main/flight/pid.c` level
   path, `fw_p_level`) and record it in research.md R17. Any change to surface behaviour after a fault needs this trace first
   (FR-015b (2))
 - [ ] T058 [US7] The FR-015b timelines, in `specs/045-m2-tracking/fault-timelines.md`. For each of RX glitch / loss, TX reboot, FC
@@ -411,8 +411,8 @@ failsafe debate's inputs. Nothing here changes firmware or a saved setting.
   - the in-flight re-arm path and its pilot action count, including the transmitter-side option (R-6) and the limits of emergency
     arming (B9).
 
-  This is the input to the failsafe-configuration debate
-- [ ] T059 [US7] The pilot brief for **today's** firmware, `specs/045-m2-tracking/pilot-brief.md` (B-7):
+  This is the input to the failsafe-configuration debate. *Drafted 2026-11-12 from R16–R18 and the source; the measured cells wait for T056.*
+- [X] T059 [US7] The pilot brief for **today's** firmware, `specs/045-m2-tracking/pilot-brief.md` (B-7):
   - escape = RC9 override off. With the TX link up, INAV stops merging the xiao's channels within about one RX frame, whatever
     the xiao is doing (verified in source, research R8);
   - RC6 MANUAL does nothing while engaged;
@@ -421,7 +421,7 @@ failsafe debate's inputs. Nothing here changes firmware or a saved setting.
   - after an xiao glitch or reboot, autoc can re-engage by itself ~9 s later if RC9 is still high, so **flip RC9 off after any xiao
     glitch**. That is the whole mitigation for the re-fly: the xiao is left alone (operator 2026-11-12);
   - the DROP re-arm sequence
-- [ ] T060 [US7] The safety ladder plan, `specs/045-m2-tracking/safety-ladder.md`. It holds the ordered steps (proposed order in
+- [X] T060 [US7] The safety ladder plan, `specs/045-m2-tracking/safety-ladder.md`. It holds the ordered steps (proposed order in
   Phase 10), the rule (one structural change per step: bench before and after, a happy-path g800 flight on that step alone, a short
   note, then the next step), and where the failsafe-configuration debate stands. The operator approves or reorders the steps. A
   pairing of two fault-path-only steps on one flight is the operator's call, recorded with its reason

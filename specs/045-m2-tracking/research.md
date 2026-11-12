@@ -451,6 +451,20 @@ calculation (`:634`), so the hand-back takes about one RX frame. ⇒ **With the 
 whatever the xiao is doing**, including a xiao that rebooted and re-engaged by itself (R18). Without the link, RC9 is frozen at its
 last good value and the receiver-failsafe path applies (R17).
 
+**Per-dependency table (T047, FR-010 / AS4; fork `autoc` @ 1fc3b257c, configuration of record)**:
+
+| dependency | what it is during autoc | depends on INAV's nav estimate? | gates INAV applies during autoc |
+|---|---|---|---|
+| **Rate loop** | xiao `MSP_SET_RAW_RC` → override merge (`rx/rx.c:510-512`, `rx/msp_override.c:216-222`) → rcCommand → ACRO rate target (`pid.c:438-442`) → fixed-wing rate controller (`pid.c:791-843`) → mixer / servos | **No.** Gyro, target and gains only. Board alignment rotates the gyro axes: an accuracy matter (T045), not the estimate | merged only while BOXMSPRCOVERRIDE (RC9) is on and the override is not in its own failsafe (`rx.c:510`); RC9 itself is never overridable (`msp_override.c:99`); only the channels in `msp_override_channels` 47 (roll, pitch, yaw, throttle, RC6); rate caps 360 / 240 / 40 °/s and the ±1800 °/s clamp (`pid.c:1208`); `rate_accel_limit_roll_pitch` 0 (off); I-term / pidsum limits; `throttle_idle` 5 %, max throttle, `motorstop_on_low`; servo min / max (`servos.c:460`); pulse validity (`rx_min/max_usec`). **None reads attitude or position, and none bounds altitude** |
+| **State to the companion** (`MSP2_INAV_LOCAL_STATE`, `fc/fc_msp.c:671-723`) | timestamp; position and velocity (`navGetCurrentActualPositionAndVelocity`); attitude quaternion; box bits 0–31; RC9 / RC10; filtered gyro; specific force | **Yes** for position and velocity (they are the estimate). **Partly** for the quaternion (AHRS, GPS-influenced through centripetal compensation and course-over-ground yaw, R5). No for gyro, accel, box bits and RC | **None on the content**: no validity, EPH / EPV, estimator status, failsafe phase or receiver-link field, so a faulted estimate is sent as if good. Box bits 0–31 only (`fc_msp.c:697`): FAILSAFE (bit 29) is visible, MSP RC OVERRIDE (bit 40) is not (bench A3). Rate = the companion's polling |
+| **Fallback** | (a) the pilot after RC9 off: ACRO / ANGLE / MANUAL on RC6; (b) receiver failsafe, DROP; (c) RC8 RTH / POSHOLD; (d) candidates LAND / RTH (R17 R-1) | (a) ACRO, MANUAL: no. ANGLE: the AHRS attitude only; it levels to the AHRS's level (R17 § ANGLE recovery). (b) DROP: no. (c) RTH / POSHOLD: **yes** (position + velocity trusted, heading usable, home set, fresh within `nav_position_timeout` 5 s), otherwise refused or an emergency landing. (d) LAND: altitude / position when usable, fixed angles otherwise; RTH: yes | stage-1 window 200 + `failsafe_delay`×100 = 1.2 s (`failsafe.c:156`); DROP disarm (`failsafe.c:473-476, 585-591`); re-arm after 3 s of good link with ARM off (`failsafe.c:594-611`), then the arming blockers (`fc_core.c:199-365`); nav validity `inav_max_eph_epv` 1000 cm, `nav_position_timeout` 5 s; `failsafe_min_distance` 0 (off); `small_angle` 180 (no tilt gate on arming) |
+
+Reduced-role design, per row (Decision 2 below; built after G2): **rate loop** unchanged, plus the estimator-free gates INAV lacks
+(an altitude floor relative to the engage altitude, baro-based, its lag stated). **State**: carry validity, failsafe and link
+state, and box bits by permanent id (contracts/msp-autoc-state-v2.md, deferred, BACKLOG § 045 deferrals). **Fallback**: receiver
+failsafe and the pilot's modes as today; the full estimator kept only for RTH after disengage; the loss-of-signal procedure from
+the safety-ladder debate (L7).
+
 **Decision**:
 1. **Before the re-fly** (class D, no fork change): correct the xiao comment and the pilot brief. The escape is RC9 override-off,
    then MANUAL. Bench-verify in [quickstart.md](quickstart.md) that RC9-off passes the pilot's sticks through immediately while
@@ -466,7 +480,7 @@ last good value and the receiver-failsafe path applies (R17).
 ## R9 — estimator fault fields (N3) and blackbox fields (B1)
 
 **Evidence**:
-- The message the xiao reads is `MSP2_INAV_LOCAL_STATE` (0x210E, `fc_msp.c:672-725`): 64 bytes — timestamp_us, pos (cm, NEU),
+- The message the xiao reads is `MSP2_INAV_LOCAL_STATE` (0x210E, `fc_msp.c:671-723`): 64 bytes — timestamp_us, pos (cm, NEU),
   vel (cm/s), quaternion, box bitmask, rc ch8 / ch9, gyroADCf (×10), accADCf (mg). The xiao mirrors it in `msp_autoc_state_t`
   (`xiao/include/MSP.h:261-283`). `state_valid` means *the fetch succeeded*. A false value **does** stop autoc
   (`kReasonMspStateFailure`), which is existing behaviour and unchanged by N3.
@@ -568,7 +582,7 @@ ACRO through RC6 during `autoc=y` is **intended** (operator). The question is wh
 |---|---|---|---|---|---|
 | S1 | pilot selects **RTH** (RC8 high) | with valid nav: nav takes over at once (ANGLE, nav roll / pitch / throttle). With invalid nav or < 5 m from home: **silently refused** | stops via bit 19 *(inf.)*; it cannot see RC8 | RTH, or nothing happens | no feedback on refusal; RTH is not a dependable escape with a faulted estimate |
 | S2 | pilot selects **POSHOLD** (RC8 mid) | as S1 (needs pos / vel / alt valid); the held xiao pitch / roll nudge climb and loiter | as S1 | loiter, or nothing | as S1 |
-| S3 | **ground transmitter / receiver link lost** | 0–~1.2 s: autoc continues (pilot channels frozen). Then ✔ **DROP ⇒ in-air disarm** in the same cycle; motor off; servos follow the held xiao command ~1.4 s, then the frozen pilot sticks and mode | stops on the disarm (not via the failsafe bit), closes its log | **unpowered, surfaces where the last commands left them, no pilot** | in-air disarm by design of DROP; re-arm needs ≥ 3 s of link + ARM toggle + low throttle |
+| S3 | **ground transmitter / receiver link lost** | 0–~1.2 s: autoc continues (pilot channels frozen). Then ✔ **DROP ⇒ in-air disarm** in the same cycle; motor off; servos keep the **xiao's last merged command until the link returns** (corrected 2026-11-12: during a receiver failsafe `rx.c:501-507` never overwrites the channels, so once the override stops merging they keep the xiao's last values, not the pilot's) | stops on the disarm (not via the failsafe bit), closes its log | **unpowered, surfaces where the last commands left them, no pilot** | in-air disarm by design of DROP; re-arm needs ≥ 3 s of link + ARM toggle + low throttle |
 | S3-RTH | same, with `failsafe_procedure = RTH` | forced RTH. Bad heading / alt / home ⇒ emergency landing at once; bad position ⇒ 5 s then emergency landing: motor off, ~10° dive or held descent, a **20° left-bank spiral glide** if position unusable, until landing is detected | irrelevant | glide / spiral down | relies on the nav estimate this feature distrusts; failsafe exit can hand control back to a still-sending xiao *(inf.)* |
 | S3-LAND | `failsafe_procedure = LAND` | the same emergency controller, then **disarm at `failsafe_off_delay` (~21 s), airborne or not** | — | spiral glide, then a timed disarm | timed in-air disarm |
 | S4 | **xiao stops sending** (crash, reset, UART) | last command held ~1.4 s, then the pilot's channels incl. RC6 | ✔ after a reboot: `servo_reset_required` boots **false** ⇒ if still armed with RC9 high, **autoc re-engages by itself** ~8 s later with a new origin. The watchdog is 30 s ⇒ ≥ ~38 s after a hang | ~1.4 s constant rate, then pilot; then a surprise re-engage | **> 1 s constant command; unexpected re-engage** |
@@ -636,7 +650,8 @@ Every timeline below is measured against that.
   disarm, and only with a valid GPS heading.
 - **ANGLE recovery rate**: rate target = angle error × `fw_p_level`/6.56 (≈ 3.05 /s at 20), clamped to 360 / 240 °/s (roll /
   pitch), 5 Hz LPF. From 90° bank: within ~5° in ~1 s. ⚠️ From inverted or vertical, the path ANGLE takes (roll upright vs pitch
-  through) has not been traced. This is the operator's all-attitude caution (FR-015b (2)).
+  through) has not been traced. This is the operator's all-attitude caution (FR-015b (2)). *(Traced 2026-11-12: § ANGLE recovery
+  from inverted / vertical, at the end of R17.)*
 - **MSP flood**: the PID loop is protected (REALTIME tasks first; SERIAL is LOW priority at 100 Hz, one MSP command per call, 256 B
   RX buffer). A flood delays or starves the RAW_RC frames instead. Channels not sent are invalid. ✔ **While disarmed**, non-MSP
   bytes are evaluated (`fc_tasks.c:113`). A stray `reboot_character` followed by 100 ms of silence **reboots into the bootloader**
@@ -661,8 +676,8 @@ still sending when the link returns, control goes back to the companion. B-5 (th
 
 | # | proposal | what it buys | cost / risk |
 |---|---|---|---|
-| R-1 | **`failsafe_procedure` DROP → LAND**, with `failsafe_throttle = 1000`, `motorstop_on_low = ON`, `failsafe_fw_roll_angle / yaw_rate` chosen by the operator (circle vs wings-level), `failsafe_off_delay` chosen to never disarm in the air (semantics to verify on the bench) | motor off **and still armed**; surfaces in ANGLE instead of stale commands; **control back without a re-arm**; no bootloader exposure (stays armed); no nav dependence | ANGLE from inverted / vertical is untraced; a glide circle rather than a "drop" over the park; the operator's prior is "DROP is generally the safest" |
-| R-2 | **`failsafe_delay` 10 → 3–5** (0.5–0.7 s) | shortens the powered stage-1 window **and** the companion-held window (1.4 s → 0.6–0.8 s) | more failsafes on short glitches; cheap with LAND (recoverable), costly with DROP (disarm) |
+| R-1 | **`failsafe_procedure` DROP → LAND**, with `failsafe_throttle = 1000`, `motorstop_on_low = ON`, `failsafe_fw_roll_angle / yaw_rate` chosen by the operator (circle vs wings-level), `failsafe_off_delay` chosen to never disarm in the air (semantics to verify on the bench) | motor off **and still armed**; surfaces in ANGLE instead of stale commands; **control back without a re-arm**; no bootloader exposure (stays armed); no nav dependence | ANGLE from inverted / vertical is untraced *(traced 2026-11-12, end of R17)*; a glide circle rather than a "drop" over the park; the operator's prior is "DROP is generally the safest" |
+| R-2 | **`failsafe_delay` 10 → 3–5** (0.5–0.7 s) | shortens the powered stage-1 window **and** the companion-held window (1.4 s → 0.7–0.9 s: 200 ms signal timeout + 200 + `failsafe_delay` × 100 ms; corrected 2026-11-12) | more failsafes on short glitches; cheap with LAND (recoverable), costly with DROP (disarm) |
 | R-3 | **companion MSP caps**: RAW_RC ≤ 50 Hz with all overridden channels, total ≤ 50 commands/s, one request outstanding, **never** setting / config / reboot commands in flight, **never** non-MSP bytes, and **stop all traffic** when INAV reports disarmed in the air (xiao side) | a misbehaving companion can't starve RAW_RC or brick the controller | xiao code only |
 | R-4 | **flight-controller watchdog**: enable IWDG in the fork (timeout ~100–250 ms), so a hang resets and the motor stops (outputs off during the reboot) instead of a frozen powered fly-away | removes the worst case: a hang with the motor running | a fork change: the fourth build surface. The reboot then lands in "disarmed, MANUAL passthrough", and re-arm stays blocked by the baro calibration |
 | R-5 | **fork: in-flight restart path**: on a watchdog / brownout boot (reset reason is persisted), skip or bypass the baro calibration block and allow arming in flight with low throttle | the in-flight re-arm the operator wants after an FC reboot | a fork change; it needs its own test plan. After G2 |
@@ -675,6 +690,100 @@ throttle), which favours LAND (armed throughout, control back on stick motion) a
 count. Original recommendation for the re-fly: **R-2 + R-3 now** (config + xiao). **R-1** bench-tested on the bench and,
 if accepted, flown. **R-4 / R-7** as the first fork change after G2, or before the re-fly if the operator rates the hang case high
 enough. **R-5** after G2. Intentional in-flight fault testing waits for a large open site (spec FR-015b).
+
+### Further findings from the T057 trace (2026-11-12; folded in from the trace report, to verify on the bench)
+
+- **FW_LAUNCH on an in-flight re-arm**: a re-arm with no valid GPS heading enters launch mode (roll locked, motor off, the sticks
+  cannot abort it), and launch mode wants the sticks centred to arm. Any in-flight re-arm path (T058, ladder L7) must account for it.
+- **LAND's timed disarm**: `failsafe_off_delay` disarms after ~20 s under LAND and then imposes a ~30 s re-arm wait;
+  `failsafe_off_delay = 0` disables that disarm. This answers R-1's "semantics to verify" (still to confirm on the bench, T056).
+- **Re-arm after an FC reboot**: with `init_gyro_cal = OFF` the baro calibration can finish in a steady glide (sink below
+  ~2.6 m/s), so a re-arm after an FC reboot may be possible, unlike in a dive. To check on the bench (H4).
+- **HardFault**: the FC halts with the motor off and the surfaces frozen, and never reboots (no watchdog; R-4 / ladder L9).
+
+### ANGLE recovery from inverted / vertical (T057, traced 2026-11-12)
+
+Traced in the fork (`~/inav`, `autoc` @ 1fc3b257c) against the configuration of record, control profile 1: `fw_p_level` 20,
+`fw_i_level` 5, `roll_rate` / `pitch_rate` 36 / 24, `max_angle_inclination_rll/pit` 750, `fw_level_pitch_trim` 0,
+`fw_min_throttle_down_pitch` 0, no AUTOLEVEL box. "Ideal" numbers assume the aircraft follows the rate demand exactly; the real
+roll and pitch authority at the airspeed of the moment is lower and is not in the source.
+
+**How ANGLE is entered.** It is forced when the failsafe is active and controlling with a `forceAngleMode` procedure
+(`flight/failsafe.c:215-220`), when nav requires it (`navigation/navigation.c:4630-4634`), or by the pilot's box
+(`fc/fc_core.c:683-694`). Per procedure:
+- **DROP**: its table entry sets `forceAngleMode` (`failsafe.c:113-122`), but DROP goes straight to FAILSAFE_LANDED, which disarms
+  and clears `controlling` in the same pass (`failsafe.c:473-476, 585-591`). **ANGLE is never applied under DROP.** The aircraft is
+  disarmed with the motor off, and the servos stay on the ACRO rate loop: disarmed, only throttle-sourced outputs are forced
+  (`flight/servos.c:460-474`). While the receiver is in failsafe, `rcChannels[].data` is not refreshed from it (`rx/rx.c:503-507`)
+  and the override merge writes `.data` (`rx/msp_override.c:216-222`). So roll, pitch, yaw, throttle and RC6 keep the companion's
+  **last merged values** after the override itself times out: the surfaces hold the companion's last **rate** command, in ACRO,
+  until the link returns.
+- **LAND** (`AUTO_LANDING`): forced ANGLE. The failsafe sets roll / pitch / yaw neutral (`failsafe.c:261-285`), and the fixed-wing
+  emergency-landing controller, which runs after it in the loop (`fc_core.c:925-949`), overwrites them
+  (`navigation/navigation_fixedwing.c:787-813`). With no usable estimate: roll −20° (`failsafe_fw_roll_angle` −200), pitch +10°
+  dive (`failsafe_fw_pitch_angle` 100; "positive means dive", `failsafe.c:79`), yaw −45 °/s. With a usable altitude: pitch from the
+  altitude controller within −20 / +25°. With a usable position: roll from the position controller within ±75°
+  (`nav_fw_bank_angle`). Throttle = `failsafe_throttle` 1000 ⇒ motor stop (`flight/mixer.c:666-671`).
+- **RTH**: forced ANGLE with nav targets; an unusable estimate falls back to the emergency-landing controller above.
+
+**The level loop** (`flight/pid.c:1223-1244`; roll and pitch only, yaw stays a rate command):
+- target = rcCommand scaled by `max_angle_inclination` (`pid.c:415-419, 597-634`): 0 / 0 for centred sticks. The LAND angles
+  round-trip through the same scaling unchanged;
+- error = target − `attitude.raw[axis]`, in degrees, **not wrapped** (`pid.c:638`);
+- rate demand = error × `fw_p_level`/6.56 = **3.05 /s** (τ 0.33 s) (`pid.c:649`, `pid.h:46`), clamped to ±`roll_rate`×10 =
+  **±360 °/s** and ±`pitch_rate`×10 = **±240 °/s**. The clamp binds above **118°** of roll error and **79°** of pitch error;
+- then a PT1 at `fw_i_level` = **5 Hz**, τ 32 ms (`pid.c:662-665`), then the same fixed-wing rate controller as ACRO
+  (`pid.c:1265-1272`; `rate_accel_limit_roll_pitch` 0 = off). Turn assist, when a nav mode enables it, is skipped above 80° of tilt
+  (`pid.c:1018`);
+- each axis on its own: an Euler-angle error becomes a **body**-rate demand, with no frame conversion.
+
+The attitude is Euler from the rotation matrix (`flight/imu.c:566-567`): roll = atan2 ∈ (−180°, 180°], pitch = asin ∈
+[−90°, 90°], positive pitch = nose down. "Past vertical" never shows as |pitch| > 90°; it shows as roll and heading flipped by 180°.
+
+**From fully inverted** (roll ±180°, pitch ≈ 0): ANGLE **rolls upright, the shorter way** (a half roll). It does not pitch through:
+the pitch error is ≈ 0 and Euler pitch cannot pass 90°. Ideal: 360 °/s from 180° to 118° (0.17 s), then exponential with
+τ 0.33 s: |roll| < 90° at ~0.26 s, < 45° at ~0.5 s, < 5° at ~1.2 s, plus the 32 ms LPF and the airframe's rate-loop lag. Two
+caveats:
+- **The pitch loop runs backwards while |roll| > 90°** (Euler pitch rate = q cos φ − r sin φ; standard kinematics, not in the
+  source). A body pull moves an inverted aircraft's nose *further* from level, so an inverted, nose-low aircraft gets more nose-low
+  (e-folding 0.33 s, weighted by cos φ) until the wings pass 90°, then the loop has the right sign and pulls out. Ideal: 10°
+  nose-low inverted becomes ~15–20° nose-low by the time the wings pass 90°.
+- **Inverted and steeply nose-low** (e.g. the back of a loop): both loops act at once. The roll loop rolls upright at up to
+  360 °/s; the pitch loop pulls toward the canopy, i.e. on toward vertical (a split-S). Ideal, from 45° nose-low: the wings pass
+  90° with the nose ~85° down, then the pull-out follows. Which loop dominates in flight depends on the airframe's roll vs pitch
+  authority at that speed: **not determinable from source.**
+
+**From nose straight down** (pitch +90°): the pitch error is −90° whatever the roll, so ANGLE demands a **pull** (toward the
+canopy) at the 240 °/s clamp, then proportionally below 79°. A pull from vertical always ends **upright**, on whatever heading the
+canopy faced: an ordinary dive pull-out. Ideal: within 5° of level in ~0.95 s. In practice it is **lift-limited**: 240 °/s at
+24 m/s needs ~10 g, so the elevator saturates, and the demand stays above a 4 g pull (~94 °/s at 24 m/s) until the error is under
+~31°. The altitude used is set by the airframe (§ Time budget: ~16 m at 4 g, ~32 m at 2 g), not by ANGLE. Under LAND with no
+estimate the end state is the 10° dive with 20° of left bank. By the same rule, nose straight up gives a push (toward the belly),
+which also ends upright.
+
+**Singularities and wrap-around**:
+- **Roll at pitch ±90° (gimbal lock)**: both atan2 arguments go to 0 (`imu.c:566`), so roll is noise and the roll loop may
+  demand up to ±360 °/s. At vertical the body roll axis points along the flight path, so this only spins the aircraft about it: it
+  changes the pull-out heading, not the pitch error. It stops once the pull has moved the nose a few degrees off vertical.
+- **Roll at ±180°**: the error is not wrapped, but with a 0° target |error| ≤ 180° and always points the shorter way. The demand
+  flips sign (a 720 °/s step) where the attitude crosses ±180°. The 5 Hz LPF smooths it, so a roll reading that dithers across
+  ±180° averages to a brief hesitation until the aircraft drifts off. Its size depends on AHRS noise and the airframe: **not
+  determinable from source.**
+- **A non-zero roll target (LAND −20°)**: between +160° and +180° of roll the error is −180° … −200°, so ANGLE rolls the **long
+  way** (left, through wings-level): at most 20° extra, ≤ 0.06 s at 360 °/s. The direction still flips at ±180°, not at
+  target + 180°.
+- **Pitch**: asin has no wrap; |error| ≤ 90° + |target|.
+
+**What ANGLE levels to** is the AHRS's level. On 11-08 the AHRS attitude was 10–25° off in sustained manoeuvres (R5 § AHRS under
+load); ANGLE recovers to that, not to true level.
+
+**For FR-015b (2)**: under today's DROP there is **no self-levelling at all** after a link loss: the surfaces hold the companion's
+last rate command, unpowered, until the link returns. LAND (R-1) gives a defined path: a half roll from inverted, a full-authority
+pull from vertical, with the inverted pitch reversal and the gimbal-lock spin as transients, ending in the fixed −20° / +10° glide
+when the estimate is unusable. B-1's zero-rate hold (ladder L4) holds whatever attitude the stop found; with L4, DROP's held
+command becomes that zero-rate command. Bench-checkable (T056 B6 / H1, LAND in RAM, motor disconnected): held inverted, the
+ailerons deflect to roll toward upright (watch the direction near ±180°) and the elevator stays near neutral; held nose-down
+vertical, full up-elevator. After a DROP on the bench, the surfaces keep the companion's last command until the TX is back on.
 
 ## R18 — what the xiao does on a reboot in flight (operator 2026-11-11)
 

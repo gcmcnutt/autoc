@@ -72,6 +72,26 @@ Download v2 loses notifications above window ~4 (window 8: heavy loss and a disc
 drops incoming HCI traffic (ACKs, completed-packet events) when its 256 B ring is full. Window 2 gives 15.6 kB/s, which is plenty
 (SC-002). A larger ring in a patched ArduinoBLE would allow bigger windows; not needed now.
 
+### [045 US4 / FR-010 (T047), filed 2026-11-12 · INAV fork, after G2] Build the reduced-role INAV
+
+The design is written ([research R8](045-m2-tracking/research.md), per-dependency table and Decision 2): during autoc, INAV is the
+rate loop + the MSP override + receiver failsafe + estimator-free gates, and the full estimator is kept only for RTH after
+disengage. The rate loop already reads no estimate; what INAV lacks is an **estimator-free altitude floor** (relative to the engage
+altitude, baro-based, its lag stated), and the state message carries no validity at all (the item below). The companion-side stall
+watchdog is now safety-ladder step L6. A fork change, so it is kept out of the re-fly's build surface. Trigger: after G2; order it
+against the fork steps of the safety ladder (L8, L9) so each flies on its own.
+
+### [045 US5 (T055), filed 2026-11-12 · xiao + INAV fork, deferred by operator] Per-tick companion fault flags: state message v2, flight log v7 tick fields, on-board derivation
+
+Deferred (spec § Clarifications 2026-11-12): the blackbox already records the signals (navEPH / EPV, navFlags, numSat, failsafe
+phase, flight modes; accWeight through `debug_mode = VIBE`), so US5 is met from the blackbox (B1 + the offline flags, T051–T054),
+and the change is a structural one to proven firmware. Design of record:
+[contracts/msp-autoc-state-v2.md](045-m2-tracking/contracts/msp-autoc-state-v2.md) and
+[contracts/flight-log-v7.md](045-m2-tracking/contracts/flight-log-v7.md). A revived v2 also needs `failsafe_phase`,
+receiver-signal flags and box bits 32–63 (R16 B-5; bench A3: MSP RC OVERRIDE is bit 40 on article 1, outside the 32 bits v1
+carries). Trigger: a safety step that needs the companion to act on a fault the box bits cannot show, the reduced-role INAV
+(above), or a flight where the blackbox flags prove insufficient.
+
 ## 044 deferrals (filed 2026-11-08, from the acceptance flight)
 
 ### [044 close, filed 2026-11-08 · ⭐ OPEN GATE · deferred behind 045 M2 fidelity work] SC-002 pitch missed in flight — separate airframe from policy before any corrective bake
