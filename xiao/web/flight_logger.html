@@ -96,7 +96,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>🚁 XIAO-GP Flight Logger</h1>
+    <h1>🚁 XIAO-GP Flight Logger <small style="font-size:0.5em;font-weight:normal">download v2 · resumable</small></h1>
 
     <div>
       <button id="connectBtn" onclick="connect()">Connect to XIAO-GP</button>
@@ -156,7 +156,9 @@
     const dl = { t0: 0, connectAt: 0, chunks: 0, dup: 0, gap: 0, acks: 0, errors: 0, startOffset: 0 };
     function dlNow() { return dl.t0 ? (performance.now() - dl.t0).toFixed(1) : '-'; }
     function dlog(msg) {
-      dlLog.push(`${new Date().toISOString()} t=${dlNow()}ms ${msg}`);
+      const line = `${new Date().toISOString()} t=${dlNow()}ms ${msg}`;
+      console.log('[flight_logger]', line);  // mirrored to the browser console (F12) as well as the Copy log buffer
+      dlLog.push(line);
       if (dlLog.length > 20000) dlLog.splice(0, dlLog.length - 20000);  // bound memory on very long sessions
     }
     function dlSummary(tag) {
@@ -377,6 +379,9 @@
         saveDownload();
         hideProgress();
         expectedFileSize = 0;
+      } else if (value.startsWith('READY:') || value.startsWith('DOWNLOAD_DONE')) {
+        dlog('this xiao runs the old v1 download firmware; this page speaks v2 — flash the current xiao build');
+        log('This xiao runs the old (v1) download firmware. Flash the current xiao build, or use the matching old page.');
       } else if (value.startsWith('ERR:') || value.startsWith('ERROR') || value === 'ABORTED') {
         dl.errors++;
         dlog(`firmware error "${value}"`);
