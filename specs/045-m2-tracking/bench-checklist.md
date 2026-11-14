@@ -26,7 +26,7 @@ poses, `cal_verify.py accel`), T036 (C4 gyro zero / gravity; `init_gyro_cal` OFF
 T038 (C6 panel tilts → `align_mag_*`, before T044), T039 (C7 xiao orientation photo).
 
 **[SERVO], motor disconnected — safety "before" record (US7-A)**
-- [~] **T056** *(2026-11-13 done: A7 receiver failsafe; B4 / B5 / H3 xiao reboot while engaged ×2 — hold 1.35–1.43 s incl. full throttle, self re-engage ~9.8 s; S6 path-end hold; RC9 escape. Still to do: B2, B3, B6–B10, H1, H2, H4, H6, ×3 repeats)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
+- [~] **T056** *(2026-11-13 done: A7 receiver failsafe; B4 / B5 / H3 xiao reboot while engaged ×2 — hold 1.35–1.43 s incl. full throttle, self re-engage ~9.8 s; S6 path-end hold; RC9 escape; **B6 / H1 10 s TX off while engaged ×2**: DROP disarm, surfaces frozen at the xiao's last command, no automatic re-arm, xiao stays out until RC9 low → high. Still to do: B2, B3, B7–B10, H1 0.5 s / 2 s, H2, H4, H6, LAND in RAM, ×3 repeats; ⏳ pull the INAV blackbox for the B6 stage-1 window)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
   vs DROP in RAM only (never saved), with pilot-action counts and timings. H5 (MSP flood) stays held.
 
 **[PROP], restrained (US4 / US5)**: T040 (D1 mount survey, `mount_survey.py`), T041 (D2 compass vs current + servo sweep, I2C
@@ -102,7 +102,7 @@ to this file.
   channels including RC6. Watch the throttle channel output in the Configurator Outputs tab (motor disconnected).
 - [ ] **B5 xiao reboot while armed with RC9 high** ⇒ does autoc re-engage by itself (expected today, R16 S4)? Record the delay.
   ⚠️ Motor disconnected.
-- [ ] **B6 Transmitter off (LOS) while engaged** ⇒ today's DROP: time to disarm, servo behaviour after the disarm, re-arm sequence
+- [~] **B6 Transmitter off (LOS) while engaged** *(2026-11-13, DROP ×2 done, [results](bench-results-20261113.md); LAND in RAM still to do)* ⇒ today's DROP: time to disarm, servo behaviour after the disarm, re-arm sequence
   and time after the TX is back on. Then the same with **LAND** as a candidate (R-1), *in RAM only, not saved*: motor output at
   minimum while armed, ANGLE on the surfaces, and control back on stick motion. Note the companion-regains-control caveat.
 - [ ] **B7 `failsafe_delay` candidates** (R-2) in RAM: measure the stage-1 and companion-hold windows at 10 / 5 / 3.

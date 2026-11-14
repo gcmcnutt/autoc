@@ -72,6 +72,14 @@ Download v2 loses notifications above window ~4 (window 8: heavy loss and a disc
 drops incoming HCI traffic (ACKs, completed-packet events) when its 256 B ring is full. Window 2 gives 15.6 kB/s, which is plenty
 (SC-002). A larger ring in a patched ArduinoBLE would allow bigger windows; not needed now.
 
+### [045 T056 B6, filed 2026-11-13 · xiao, low] A disarm while engaged loses the span summary
+
+On a disarm the arm-transition block in `msplink.cpp` closes the flight file (`flashLoggerEndFlight`, line 729) before
+`stopAutoc` (line 758) writes the span summary, so the write fails (`Flight log: SpanSummary write failed`, seen on both B6 runs,
+flights #9 and #10). It happens on any disarm with autoc engaged (a DROP failsafe, or a pilot disarm with RC9 high); the per-tick
+records are intact. Fix: stop autoc before closing the file on the disarm edge. Do it with the next xiao change that touches
+`stopAutoc` (ladder L4 / L2), not on its own.
+
 ### [045 US4 / FR-010 (T047), filed 2026-11-12 · INAV fork, after G2] Build the reduced-role INAV
 
 The design is written ([research R8](045-m2-tracking/research.md), per-dependency table and Decision 2): during autoc, INAV is the

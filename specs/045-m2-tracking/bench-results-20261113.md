@@ -57,3 +57,39 @@ fix: the four mode columns are ANGLE, MANUAL, FAILSAFE, OVERRIDE in that order; 
    action (R18). ⇒ ladder **L2** (no resume until disarm → arm). For the re-fly the mitigation is the pilot brief: **RC9 off after any
    xiao glitch**.
 3. RC9 low hands control back at once, every time (the escape works, R8).
+
+### B6 — transmitter off while engaged (today's DROP, `failsafe_delay` 10)
+
+Setup as Test B (battery on, **prop off**, TX linked); arm, "launch", RC9 low → high, then the TX switched off by hand a few seconds
+into the run. No reset script. [`fc_watch.py`](fc_watch.py) at ~24 Hz, CSV
+[`bench-20261113/fc_watch_testB6_txoff.csv`](bench-20261113/fc_watch_testB6_txoff.csv) (columns as the header); xiao flights #9, #10.
+
+| run | event | measured |
+|---|---|---|
+| 1 (16:47, path 6 = index 5, SeededRandomB) | TX off; the link came back 18.3 s after the disarm | **autoc flew on until the disarm**: the merged roll ramped smoothly 1318 → 1379 through the last armed sample |
+| 1 | **DROP disarm** (t = 40.02 s) | disarm, `rc_link_lost` and FAILSAFE in the same ~40 ms sample; the xiao logged "Autoc disabled (disarmed)" in the same second |
+| 1 | after the disarm | channels **frozen at the xiao's last command** (roll 1379, pitch 1164, throttle 1991, motor off) until the link returned; the operator saw the surfaces stay put |
+| 1 | link back (t_L = 58.34 s) | the pilot's channels from the first sample (sticks centred, RC6 MANUAL, RC9 still high) |
+| 1 | t_L + 0.72 s | `rc_link_lost` cleared |
+| 1 | t_L + 3.72 s | FAILSAFE cleared (the pilot had put the throttle down and the ARM switch off while the TX powered up) |
+| 2 (16:54) | **re-arm with RC9 still high** (from run 1, never lowered) | **no re-engage** for 2.2 s while armed (the stop latch survives the disarm → arm), then RC9 low ⇒ "Servo reset detected"; RC9 high ⇒ engaged normally |
+| 2 (path 0) | TX power-cycled, then left alone | DROP disarm at t = 455.85 s (7 s after engage); surfaces frozen at **roll 1123, pitch 1122 — near full deflection on both axes** — throttle 1991 |
+| 2 | link back (t_L = 469.33 s, 13.5 s after the disarm) | pilot's channels (MANUAL, throttle stick 1200, RC9 high); `rc_link_lost` cleared at t_L + 0.71 s |
+| 2 | ARM switch left on | **FAILSAFE stayed active 188 s**, until the pilot switched ARM off; INAV never re-armed by itself |
+
+**What this confirms (R16 S3, corrected 11-12)**:
+1. A link loss of more than ~1.2 s while engaged is an **in-air disarm**: motor off, and the surfaces stay **wherever the xiao's
+   last command left them** until the link returns; in run 2 that was near full roll and pitch. Unpowered with the surfaces
+   deflected, the aircraft would spiral or dive until the TX is back. This is the strongest argument in the DROP vs LAND debate (R-1).
+2. When the link returns, the pilot has the surfaces at once (motor off). Re-arming needs: ≥ 3 s of good link, **the ARM switch off**
+   (`failsafe.c:599`: failsafe does not exit until it is), then ARM on with low throttle. No automatic re-arm; at least two switch
+   actions (×2).
+3. The xiao does not resume after the re-arm while RC9 stays high; RC9 low → high is required (×1, 2.2 s armed).
+4. **Not measured**: the stage-1 window (TX off → disarm). MSP can't show it: INAV updates the RC_LINK / FAILSAFE_SYSTEM arming flags
+   only while disarmed, and the FAILSAFE box only comes on with the procedure (= the disarm under DROP). The INAV blackbox records
+   `failsafePhase` and `rxSignalReceived` in its slow frames: ⏳ pull the blackbox for 16:47 and 16:54.
+
+**New finding, xiao log**: both runs printed `Flight log: SpanSummary write failed (span 1)`. On a disarm the arm-transition block
+closes the flight file ([msplink.cpp:729](../../xiao/src/msplink.cpp#L729)) before `stopAutoc` writes the span summary
+([msplink.cpp:758](../../xiao/src/msplink.cpp#L758)). Any disarm while engaged (DROP, or a pilot disarm with RC9 still high) loses the
+span summary; the per-tick records are intact. Filed in [BACKLOG](../BACKLOG.md) § 045 deferrals.

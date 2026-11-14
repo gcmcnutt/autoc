@@ -61,12 +61,12 @@ no number in those cells is invented here.
 
 | t | INAV | xiao | aircraft | pilot | measured |
 |---|---|---|---|---|---|
-| 0 | the receiver flags failsafe; channels frozen (M1) | flying | the policy flies on | RC9 frozen: no escape | ⏳ T056 |
+| 0 | the receiver flags failsafe; channels frozen (M1) | flying | the policy flies on | RC9 frozen: no escape | **2026-11-13**: autoc flew on to the disarm (×2); the stage-1 length is not visible over MSP, ⏳ blackbox `failsafePhase` |
 | < 1.2 s, link back | nothing happened; channels resume | flying | unchanged | RC9 works again | ⏳ T056 |
-| 1.2 s | DROP: in-air disarm (M2) | sees the disarm, stops, goes quiet (R16 S3) | motor off; surfaces hold the last rate command, ACRO; may keep rotating | nothing | ⏳ T056 |
-| link back (t_L) | pilot's channels from the first good frame | quiet | pilot steers, motor off | glide; start the re-arm | ⏳ T056 |
-| t_L + 0.7 s | link "up" for the failsafe | — | — | — | ⏳ T056 |
-| ≥ t_L + 3.7 s | re-arm allowed (ARM off at the end of the 3 s) | — | — | ARM on, throttle up | ⏳ T056 |
+| 1.2 s | DROP: in-air disarm (M2) | sees the disarm, stops, goes quiet (R16 S3) | motor off; surfaces hold the last rate command, ACRO; may keep rotating | nothing | **2026-11-13** ×2: disarm and xiao stop in the same second; channels frozen at the last command (run 2: roll 1123, pitch 1122, near full) |
+| link back (t_L) | pilot's channels from the first good frame | quiet | pilot steers, motor off | glide; start the re-arm | **2026-11-13** ×2: the pilot's channels from the first sample |
+| t_L + 0.7 s | link "up" for the failsafe | — | — | — | **2026-11-13** ×2: `rc_link_lost` cleared at t_L + 0.72 / 0.71 s |
+| ≥ t_L + 3.7 s | re-arm allowed (ARM off at the end of the 3 s) | — | — | ARM on, throttle up | **2026-11-13**: FAILSAFE cleared at t_L + 3.72 s with ARM already off; with ARM left on it stayed 188 s until ARM off (no automatic re-arm). The xiao stays out after the re-arm until RC9 low → high |
 
 **Candidate changes**:
 
