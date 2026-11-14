@@ -161,7 +161,7 @@ on *disarmed and downloading*.
 - [X] T016 [US2] A wired path, which the xiao lacks today. It is the byte reference for the comparison, and a field fallback with a
   laptop. Add a USB-serial `DUMP:<file>` console command (raw bytes framed with size + CRC32; refused while armed) and
   `specs/045-m2-tracking/xiao_serial_dump.py` to capture it
-- [ ] T017 [US2] (operator) The measurement of record (quickstart § 8 steps 1–2, checklist F1). Build gate first: `pio run -e
+- [X] T017 [US2] (operator) The measurement of record (quickstart § 8 steps 1–2, checklist F1). Build gate first: `pio run -e
   xiaoblesense_arduinocore_mbed -d xiao` SUCCESS (record RAM and flash in MANIFEST). Then flash T014–T016. The field phone
   downloads a full ~300 kB log at ~3 m (the SC-002 distance), plus one pass at a longer range for the record. Paste the **Copy log** output into
   `specs/045-m2-tracking/ble-measure-YYYYMMDD.md`, plus a `ble_cdp_probe.py` run from the training host. Record the measured cause
@@ -195,7 +195,7 @@ on *disarmed and downloading*.
 - [X] T022 [US2] Page v2 client in `xiao/web/flight_logger.html`: `DL2` with resume; ACK every N chunks and on a gap; duplicates
   ignored by offset; the received buffer kept across reconnects, keyed by file name + size; CRC32 checked at `DONE2`. The T015
   instrumentation stays
-- [ ] T023 [US2] (operator) SC-002 acceptance (quickstart § 8 step 3). Build gate first: `cmake --build build && (cd build &&
+- [X] T023 [US2] (operator) SC-002 acceptance (quickstart § 8 step 3). Build gate first: `cmake --build build && (cd build &&
   ctest)` incl. `ble_dl2_tests`, and `pio run` SUCCESS. Then:
   - with the field phone ~3 m from the aircraft, ~300 kB downloads in < 60 s;
   - walk out of range mid-transfer, reconnect and resume, then `cmp` the result with the T016 wired dump;

@@ -110,8 +110,7 @@ runs (fresh `retain=expire`); `--days 0` (dry run) would remove both (20 files, 
 | 2026-11-12 | v2 final build (cap 8) | BLE, Linux central | 19.4 s (15.5 kB/s), 0 gaps, CRC OK. xiao `pio run` RAM 53.8 %, flash 46.1 %; ctest **56 / 56** after a clean `rebuild-perf.sh` (+ `ble_dl2_tests` 8 / 8) |
 
 Captures: [`bench-20261112/`](bench-20261112/) (probe JSON with the page's own log, and the xiao console).
-⏳ Owed by the operator: the field phone and the Windows / Edge laptop at ~3 m (T017 phone half, T023), and T023's arm-mid-download
-check (needs the TX).
+| 2026-11-13 | v2 + reload-persistent resume | **Edge 157 / Windows** (the field laptop) | full: **20.9 s (14.4 kB/s)**, 0 gaps, CRC OK; resume after Disconnect / range loss / xiao reset / **arm mid-download** all OK; arm shuts BLE down before the flight file opens ([bench-results-20261113.md](bench-results-20261113.md)) |
 
 ## § Gates
 

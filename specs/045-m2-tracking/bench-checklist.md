@@ -15,10 +15,10 @@ proposed steps in [`safety-ladder.md`](safety-ladder.md); skim [`fault-timelines
 fills.
 
 **[USB] / phone — BLE download (US2)**
-- [ ] **T017 / T023 phone**: with the **field phone** and with the **Windows / Edge laptop**, phone ~3 m from the aircraft,
+- [x] **T017 / T023** *(2026-11-13: done with Edge on Windows, the field laptop — 20.9 s, resume OK in every case; [results](bench-results-20261113.md))*: with the **field phone** and with the **Windows / Edge laptop**, phone ~3 m from the aircraft,
   download `flight_001.bin` with the new page. Target < 60 s (Linux measured 19 s). Walk out of range mid-download, come back,
   reconnect, press Download again ⇒ it resumes. If anything is slow or fails: **Copy log** and paste it back.
-- [ ] **T023 arm mid-download** (TX on, motor disconnected): start a download, arm ⇒ BLE drops at once and the xiao's console shows
+- [x] **T023 arm mid-download** *(2026-11-13: BLE shut down at once, resumed after disarm)* (TX on, motor disconnected): start a download, arm ⇒ BLE drops at once and the xiao's console shows
   normal MSP polling again.
 
 **[USB] — calibration and configuration (US4)**: T034 (A7 receiver failsafe mode, A8 boot banner), T035 (C3 accel 6-point + 12
