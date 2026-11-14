@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--port", default=None)
     ap.add_argument("--block", type=int, default=4096, help="bytes per read request (default 4096)")
     ap.add_argument("--summary", action="store_true", help="print the flash summary and exit")
+    ap.add_argument("--start", type=int, default=0, help="first byte to read: the previous dump's used size reads only the logs written since (each log carries its own header)")
     args = ap.parse_args()
 
     s = serial.Serial(args.port or find_fc_port(), 115200, timeout=0.05)
@@ -49,7 +50,7 @@ def main():
     if not ready:
         sys.exit("fc_blackbox_dump: flash not ready")
 
-    t0 = time.time(); addr = 0; last = 0.0
+    t0 = time.time(); addr = args.start; last = 0.0
     with open(args.out, "wb") as f:
         while addr < used:
             n = min(args.block, used - addr)
@@ -63,9 +64,9 @@ def main():
             f.write(data); addr += len(data)
             if time.time() - last > 2:
                 el = time.time() - t0
-                print(f"  {addr}/{used} B  {addr / el / 1024:.1f} kB/s", flush=True); last = time.time()
+                print(f"  {addr}/{used} B  {(addr - args.start) / el / 1024:.1f} kB/s", flush=True); last = time.time()
     el = time.time() - t0
-    print(f"saved {addr} B to {args.out} in {el:.1f} s ({addr / el / 1024:.1f} kB/s)", flush=True)
+    print(f"saved {addr - args.start} B (bytes {args.start}..{addr}) to {args.out} in {el:.1f} s ({(addr - args.start) / el / 1024:.1f} kB/s)", flush=True)
 
 
 if __name__ == "__main__":

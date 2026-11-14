@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """045 T056 bench tool: watch the flight controller over its USB MSP port, read-only, at ~20 Hz, and print every change in arm
-state, FAILSAFE / MSP RC OVERRIDE / MANUAL / ANGLE modes, the RC_LINK / FAILSAFE_SYSTEM arming flags, and the merged RC channels
-(roll, pitch, throttle, yaw, RC6 mode, RC9 override switch). Every sample also goes to a CSV, so hold windows and hand-backs can be
+state, FAILSAFE / MSP RC OVERRIDE / MANUAL / ANGLE / NAV POSHOLD / NAV RTH modes, the RC_LINK / FAILSAFE_SYSTEM arming flags, and the merged RC channels
+(roll, pitch, throttle, yaw, RC6 mode, RC8 nav switch, RC9 override switch). Every sample also goes to a CSV, so hold windows and hand-backs can be
 timed afterwards. Never writes a setting.
 
     python3 specs/045-m2-tracking/fc_watch.py [--port /dev/ttyACM0] [--seconds 300] [--csv out.csv]
 
-Box positions come from MSP_BOXIDS by permanent id (ARM 0, ANGLE 1, MANUAL 12, FAILSAFE 27, MSP RC OVERRIDE 50), not fixed bits
+Box positions come from MSP_BOXIDS by permanent id (ARM 0, ANGLE 1, MANUAL 12, FAILSAFE 27, MSP RC OVERRIDE 50, NAV POSHOLD 11, NAV RTH 10;
+CSVs from before 2026-11-13 17:30 lack the last two modes and rc8), not fixed bits
 (the bench found the xiao's fixed FAILSAFE bit 19 is NAV ALTHOLD on article 1). MSP_RC reports the merged channels: while the
 override is active, channels 1–4 and 6 are the xiao's; after the override drops, the pilot's (or the last held values in a
 receiver failsafe). Close INAV Configurator first; only one program can hold the FC's port.
@@ -23,9 +24,9 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from msp_bench_read import MSP_BOXIDS, MSP2_INAV_STATUS, find_fc_port, req  # noqa: E402
 
 MSP_RC = 105
-PERM = {"ARM": 0, "ANGLE": 1, "MANUAL": 12, "FAILSAFE": 27, "OVERRIDE": 50}
+PERM = {"ARM": 0, "ANGLE": 1, "MANUAL": 12, "FAILSAFE": 27, "OVERRIDE": 50, "POSHOLD": 11, "RTH": 10}
 AF_ARMED, AF_FS_SYSTEM, AF_RC_LINK = 1 << 2, 1 << 7, 1 << 18
-CH = {"roll": 0, "pitch": 1, "yaw": 2, "thr": 3, "rc6": 5, "rc9": 8}  # INAV internal order: ROLL, PITCH, YAW, THROTTLE
+CH = {"roll": 0, "pitch": 1, "yaw": 2, "thr": 3, "rc6": 5, "rc8": 7, "rc9": 8}  # INAV internal order: ROLL, PITCH, YAW, THROTTLE
 
 
 def main():
