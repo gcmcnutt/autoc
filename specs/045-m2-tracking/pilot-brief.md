@@ -17,7 +17,7 @@ T056. Details: [fault-timelines.md](fault-timelines.md).
    This is every stop except your own RC9 flip and a disarm: path end, timeout, an xiao fault or reboot. Be ready at the end of
    those 1.4 s, with your throttle stick where you want it.
 
-5. **After any xiao glitch or reboot, flip RC9 off and leave it off.** If RC9 stays high, autoc can re-engage by itself about 9 s
+5. **After any xiao glitch or reboot, flip RC9 off and leave it off** (bench 2026-11-13: a reset xiao re-engaged by itself ~10 s later, twice, starting the path over from a new origin). If RC9 stays high, autoc can re-engage by itself about 9 s
    later (about 40 s after a hang), from wherever the aircraft is, in the middle of whatever you are doing. This is the whole
    mitigation for the re-fly: the xiao firmware is left alone.
 

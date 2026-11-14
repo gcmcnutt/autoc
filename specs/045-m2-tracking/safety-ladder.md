@@ -21,7 +21,7 @@ The safety changes, after the re-fly, one per step. Sources: spec § Clarificati
 | step | change | tasks | why here |
 |---|---|---|---|
 | **L1** | mode bits by permanent id (B-3), so the stop watches the real FAILSAFE bit (gives B-5 with no state-message change) | T080–T082 | fault-path only; fixes a confirmed bug (bit 19 is NAV ALTHOLD, bench A3); every failsafe-aware step, LAND included, needs it |
-| **L2** | no resume after an in-flight xiao reboot (B-2a) | T083–T085 | fault-path only; removes the surprise re-engage (R18) that the pilot now covers by hand with RC9 |
+| **L2** | no resume after an in-flight xiao reboot (B-2a) | T083–T085 | fault-path only; removes the surprise re-engage (R18) that the pilot now covers by hand with RC9. **Bench 2026-11-13: re-engage measured 9.6 / 9.9 s after a reset (×2). Operator decision: not before the re-fly** — the pilot is on a hair trigger to disarm or flip RC9; the residual case (a reset in the air with no pilot action) restarts the path from a new origin |
 | **L3** | bounded run on bad output (B-4, first half) | T086–T088 | fault-path only; closes the `flight_path.empty()` timeout skip and stops on NaN / out-of-range output |
 | **L4** | neutral, motor-off frames for ≥ 3 ticks on every stop, then quiet (B-1) | T089–T090 | throttle to 0 first for every stop the xiao chooses; it changes every disengage, so it comes after the fault-only steps, with the pilot briefed first |
 | **L5** | the companion's MSP traffic (R-3): measure first, guard only a path that can exceed a cap | T091–T092 | the measurement may close it with no code change; a guard is its own step per path |
