@@ -11,7 +11,9 @@ T056. Details: [fault-timelines.md](fault-timelines.md).
 2. **RC6 MANUAL does nothing while autoc is engaged.** The xiao holds RC6. Flip RC9 off first; then RC6 works.
 
 3. **RC8 RTH / POSHOLD works only with a valid position estimate.** With a bad estimate INAV refuses it without telling you, or
-   goes to an emergency landing. Do not count on it as an escape.
+   goes to an emergency landing. Do not count on it as an escape. (Bench 2026-11-13, with a good fix: POSHOLD took the throttle
+   and surfaces from autoc at once and autoc stopped. About 1.4 s later your own RC6 decides: MANUAL cancels POSHOLD, ACRO or
+   ANGLE leave it running.)
 
 4. **After any stop, INAV keeps flying the xiao's last command, throttle included, for about 1.4 s**, then hands you the sticks.
    This is every stop except your own RC9 flip and a disarm: path end, timeout, an xiao fault or reboot. Be ready at the end of

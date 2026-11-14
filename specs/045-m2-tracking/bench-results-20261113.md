@@ -104,3 +104,32 @@ into the run. No reset script. [`fc_watch.py`](fc_watch.py) at ~24 Hz, CSV
 closes the flight file ([msplink.cpp:729](../../xiao/src/msplink.cpp#L729)) before `stopAutoc` writes the span summary
 ([msplink.cpp:758](../../xiao/src/msplink.cpp#L758)). Any disarm while engaged (DROP, or a pilot disarm with RC9 still high) loses the
 span summary; the per-tick records are intact. Filed in [BACKLOG](../BACKLOG.md) § 045 deferrals.
+
+### B2 / B3 — mode switches while engaged (RC6, RC8)
+
+Same setup (prop off, TX linked, **3D fix indoors, ~21 sats**); arm in MANUAL, launch, RC9 high (path 0), then RC8 to POSHOLD
+(mid), RTH (high), low; RC9 low; disarm. [`fc_watch.py`](fc_watch.py) now also watches NAV POSHOLD / RTH and RC8
+([CSV](bench-20261113/fc_watch_testB2B3_modes.csv)); INAV blackbox log `.09` (GPS time 20:00:14) pulled with
+`fc_blackbox_dump.py --start 7293264` (606 kB, 11 s); xiao flight #11.
+
+| t (blackbox) | event | measured |
+|---|---|---|
+| 4.87 s | engaged; **the pilot's RC6 sat at MANUAL throughout** | INAV flew ACRO (MANUAL off) on the xiao's RC6 = 1500: **B2 confirmed**, RC6 does nothing while engaged (also true of every engagement today, all armed in MANUAL) |
+| 11.42 s | **RC8 → POSHOLD** | INAV **accepted NAV POSHOLD** (`navState` 7) and **took the throttle and surfaces from the xiao at once**: throttle 1988 (xiao) → 1500 → 1835 → **2000** (nav, demanding a climb on the bench), servos to nav's (servo0 1801, servo1 1983–2000) |
+| same tick | the xiao | logged **"INAV failsafe activated (7.3 s) - disabling autoc"**: its hard-coded `MSP_MODE_FAILSAFE` bit 19 is article 1's **NAV ALTHOLD** box, which POSHOLD lights. Stopped, stop latch set |
+| 11.42 → 12.81 s | the override's hold | the merged channels froze at the xiao's last values (as Test B) but **nav ignored them**: motor stayed nav's (2000) |
+| 12.81 s (+1.38 s) | override stops merging | the pilot's channels return; **the pilot's RC6 MANUAL cancels POSHOLD** (`navState` → idle), throttle 1111 (stick), servos centred |
+| 14.16 s | RC8 → RTH | box selected, but **not executed** (`navState` idle): the pilot's MANUAL blocks nav modes. The operator saw nothing move. ⇒ **RTH while engaged not exercised** |
+| 19.35 s / 25.7 s | RC8 low / RC9 low | "Servo reset detected"; disarm at 29.5 s |
+
+**What this shows**:
+1. **With a valid nav estimate, RC8 POSHOLD is an immediate escape**: nav overrides the companion's merged channels the moment it
+   engages (no 1.4 s hold on the motor or surfaces). The xiao stops too, but only because it misreads the NAV ALTHOLD bit as
+   failsafe (R16 S1/S2 inference, now measured; ladder **L1**). With a bad estimate INAV refuses POSHOLD silently (R8), the bit
+   never lights, and nothing happens: still **not** an escape to brief as reliable. RC9 low stays the escape.
+2. **After the xiao's stop, the pilot's RC6 position decides what happens 1.4 s later**: in MANUAL, nav is cancelled and the
+   pilot has raw surfaces and the throttle stick; in ACRO or ANGLE, POSHOLD would carry on. Brief point.
+3. The xiao **never reads INAV's real FAILSAFE box** (position 29 here). Under DROP it stops on the disarm, so this costs nothing
+   today; under LAND (armed through the failsafe) the xiao would not notice the failsafe at all. Input to the R-1 decision.
+4. RTH while engaged: untested (it would need RC6 off MANUAL during the hand-back). *(inf.)* RTH also lights NAV ALTHOLD, so the
+   xiao would stop the same way.
