@@ -152,6 +152,31 @@
     let dl2 = null;                        // the active transfer: { file, size, chunk, buf, expected, sinceAck, lastAckAt }
     let ackInFlight = false, ackPending = false;
 
+    // A partial download also survives a page reload (operator 2026-11-13: a reload between drop and reconnect restarted from 0).
+    // Saved on a drop or a firmware error, keyed by file name; the size is re-checked at READY2 and the whole-file CRC at DONE2.
+    const RESUME_KEY = f => 'xiao-dl2-resume:' + f;
+    function toB64(u8) {
+      let bin = '';
+      for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      return btoa(bin);
+    }
+    function saveResume(file, e) {
+      try {
+        localStorage.setItem(RESUME_KEY(file), JSON.stringify({ size: e.size, expected: e.expected,
+                                                                b64: toB64(e.buf.subarray(0, e.expected)) }));
+      } catch (err) { dlog(`resume not saved to storage (${err.name}); it survives only until a reload`); }
+    }
+    function loadResume(file) {
+      try {
+        const j = JSON.parse(localStorage.getItem(RESUME_KEY(file)) || 'null');
+        if (!j) return null;
+        const buf = new Uint8Array(j.size), bin = atob(j.b64);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return { size: j.size, expected: j.expected, buf };
+      } catch (err) { return null; }
+    }
+    function clearResume(file) { try { localStorage.removeItem(RESUME_KEY(file)); } catch (err) {} }
+
     const dlLog = [];
     const dl = { t0: 0, connectAt: 0, chunks: 0, dup: 0, gap: 0, acks: 0, errors: 0, startOffset: 0 };
     function dlNow() { return dl.t0 ? (performance.now() - dl.t0).toFixed(1) : '-'; }
@@ -302,6 +327,7 @@
       if (dl2) {
         dlSummary('interrupted by disconnect');
         resumeStore[dl2.file] = { size: dl2.size, buf: dl2.buf, expected: dl2.expected };
+        saveResume(dl2.file, resumeStore[dl2.file]);
         log(`Disconnected at ${dl2.expected} of ${dl2.size} bytes. Reconnect and press Download on ${dl2.file} to resume.`);
         dl2 = null;
         hideProgress();
@@ -347,6 +373,8 @@
         if (dl2.size !== size) {
           if (dl2.expected !== 0) {  // the file changed under a resume: start over from 0
             dlog(`size changed ${dl2.size} -> ${size}: restarting ${dl2.file} from 0`);
+            delete resumeStore[dl2.file];
+            clearResume(dl2.file);
             dl2.size = size; dl2.buf = new Uint8Array(size); dl2.expected = 0;
             controlChar.writeValue(textEncoder.encode(`DL2:${dl2.file}:0:${DL2_WINDOW}`));
             return;
@@ -368,6 +396,7 @@
              `${actualCrc === expectedCrc ? 'OK' : 'MISMATCH'}; bytes ${dl2.expected}/${dl2.size}`);
         dlSummary(actualCrc === expectedCrc ? 'done' : 'CRC mismatch');
         delete resumeStore[dl2.file];
+        clearResume(dl2.file);
         if (actualCrc !== expectedCrc || dl2.expected !== dl2.size) {
           log(`ERROR: CRC mismatch! Expected ${expectedCrc.toString(16)}, got ${actualCrc.toString(16)}`);
           dl2 = null; hideProgress(); expectedFileSize = 0;
@@ -388,6 +417,7 @@
         if (dl2) {
           dlSummary('firmware error');
           resumeStore[dl2.file] = { size: dl2.size, buf: dl2.buf, expected: dl2.expected };
+          saveResume(dl2.file, resumeStore[dl2.file]);
           log(`Download stopped (${value}) at ${dl2.expected} of ${dl2.size}. Press Download to resume.`);
           dl2 = null;
         }
@@ -476,7 +506,7 @@
 
     async function downloadFile(filename) {
       try {
-        const saved = resumeStore[filename];
+        const saved = resumeStore[filename] || loadResume(filename);
         dl2 = { file: filename, size: saved ? saved.size : 0, chunk: 0, buf: saved ? saved.buf : null,
                 expected: saved ? saved.expected : 0, sinceAck: 0, lastAckAt: 0 };
         Object.assign(dl, { t0: performance.now(), chunks: 0, dup: 0, gap: 0, acks: 0, errors: 0,

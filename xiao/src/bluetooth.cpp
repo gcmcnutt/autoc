@@ -429,6 +429,13 @@ void serialConsoleLoop() {
       Serial.println("LIST_DONE");
     } else if (strncmp(line, "DUMP:", 5) == 0) {
       serialDump(line + 5);
+    } else if (strcmp(line, "RESET") == 0) {
+      // 045 bench: the same as pressing the reset button, reachable only over USB (disconnected in flight). Used for the
+      // download-resume-across-a-reboot test and the H3 xiao-reboot safety test.
+      Serial.println("RESETTING");
+      Serial.flush();
+      delay(50);
+      NVIC_SystemReset();
     } else if (strcmp(line, "QPROF") == 0) {
       if (state.isArmed()) { Serial.println("QPROF_ERR:armed"); }
       else { char out[480]; flashLoggerProfileRead(out, sizeof(out)); Serial.println(out); }

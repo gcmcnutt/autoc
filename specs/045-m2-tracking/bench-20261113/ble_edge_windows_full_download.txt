@@ -1,0 +1,15 @@
+# 045 T017 / T023 — BLE download v2 from Edge 157 on Windows 10 (the operator's field laptop), 2026-11-13, page "Copy log".
+# xiao console: "BLE download: flight_001.bin from 0 of 307968 B, chunk 240, window 2, MTU 247" then
+# "BLE download done: 307968 bytes, CRC 645AC948, 20782 ms (14818 B/s), STAT:307968:1284:0:28:211:175"
+2026-11-14T00:03:18.497Z t=-ms connected to XIAO-GP (8PQtbKx/pSe8Mw4VMKHwPA==)
+2026-11-14T00:03:19.353Z t=-ms status CURRENT:0
+2026-11-14T00:03:19.369Z t=-ms status LIST_DONE
+2026-11-14T00:03:23.951Z t=0.3ms DL2 flight_001.bin from 0
+2026-11-14T00:03:24.092Z t=141.7ms status READY2:307968:240:247
+2026-11-14T00:03:24.093Z t=142.1ms READY2 size=307968 chunk=240 mtu=247 from=0 window=2
+2026-11-14T00:03:24.099Z t=148.6ms chunk #1 off=0 len=240 expected=240
+2026-11-14T00:03:43.762Z t=19811.3ms chunk #1280 off=306960 len=240 expected=307200
+2026-11-14T00:03:44.868Z t=20917.4ms status STAT:307968:1284:0:28:211:175
+2026-11-14T00:03:44.868Z t=20917.7ms status DONE2:307968:645AC948
+2026-11-14T00:03:44.887Z t=20937.0ms CRC expected=645ac948 actual=645ac948 OK; bytes 307968/307968
+2026-11-14T00:03:44.888Z t=20937.2ms SUMMARY done: bytes=307968/307968 (this session 307968 from 0) secs=20.94 kB/s=14.36 chunks=1284 dup=0 gap=0 acks=1284 errors=0 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0"
