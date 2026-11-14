@@ -26,7 +26,7 @@ poses, `cal_verify.py accel`), T036 (C4 gyro zero / gravity; `init_gyro_cal` OFF
 T038 (C6 panel tilts → `align_mag_*`, before T044), T039 (C7 xiao orientation photo).
 
 **[SERVO], motor disconnected — safety "before" record (US7-A)**
-- [~] **T056** *(started 2026-11-13: A7 receiver failsafe done; Test B — xiao reboot while engaged — next)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
+- [~] **T056** *(2026-11-13 done: A7 receiver failsafe; B4 / B5 / H3 xiao reboot while engaged ×2 — hold 1.35–1.43 s incl. full throttle, self re-engage ~9.8 s; S6 path-end hold; RC9 escape. Still to do: B2, B3, B6–B10, H1, H2, H4, H6, ×3 repeats)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
   vs DROP in RAM only (never saved), with pilot-action counts and timings. H5 (MSP flood) stays held.
 
 **[PROP], restrained (US4 / US5)**: T040 (D1 mount survey, `mount_survey.py`), T041 (D2 compass vs current + servo sweep, I2C

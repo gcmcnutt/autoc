@@ -34,6 +34,7 @@ def main():
     ap.add_argument("--seconds", type=float, default=300)
     ap.add_argument("--csv", default=None)
     ap.add_argument("--chan-step", type=int, default=40, help="print a channel change larger than this many µs (default 40)")
+    ap.add_argument("--print-chans", default=",".join(CH), help="channels whose changes are printed (default all; the CSV has all)")
     args = ap.parse_args()
 
     s = serial.Serial(args.port or find_fc_port(), 115200, timeout=0.02)
@@ -44,7 +45,8 @@ def main():
     print("box positions:", pos, flush=True)
     w = csv.writer(open(args.csv, "w", newline="")) if args.csv else None
     if w:
-        w.writerow(["t_s", "armed", "rc_link_lost", "fs_system", "FAILSAFE", "OVERRIDE", "MANUAL", "ANGLE"] + list(CH))
+        # column order = the order the values are written below (flags, then modes in PERM order without ARM)
+        w.writerow(["t_s", "armed", "rc_link_lost", "fs_system"] + [n for n in PERM if n != "ARM"] + list(CH))
 
     t0 = time.time(); prev = None; prevch = None
     while time.time() - t0 < args.seconds:
@@ -67,7 +69,7 @@ def main():
             print(f"{time.strftime('%H:%M:%S')} t={t:7.2f}s  " + " ".join(f"{k}={v}" for k, v in state.items())
                   + "   ch " + " ".join(f"{k}={v}" for k, v in ch.items()), flush=True)
             prev = state; prevch = ch
-        elif prevch and any(abs(ch[k] - prevch[k]) > args.chan_step for k in ch):
+        elif prevch and any(abs(ch[k] - prevch[k]) > args.chan_step for k in args.print_chans.split(",")):
             print(f"{time.strftime('%H:%M:%S')} t={t:7.2f}s  ch " + " ".join(f"{k}={v}" for k, v in ch.items()), flush=True)
             prevch = ch
 

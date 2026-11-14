@@ -30,5 +30,30 @@ FAILSAFE 29, MSP RC OVERRIDE 40 (as bench A3).
 |---|---|
 | **A7: TX off (disarmed), then on** — article 1, SBUS receiver | TX off at 16:21:46 ⇒ INAV set **`rc_link_lost=1` and `FAILSAFE=1`**; channels kept their last good values (INAV's own hold; throttle 987). TX on ⇒ cleared at 16:22:03. ⇒ The receiver signals the loss (**no pulses on signal loss**, set intentionally by the operator), not a canned "hold" pattern INAV can't detect. |
 
-Next (deferred to a later session, operator): Test B — xiao reboot while engaged (B4 hold window, B5 / H3 self re-engage) with
-console `RESET` and `fc_watch.py`.
+### Test B — xiao reboot while engaged (B4, B5 / H3), and the hold after a normal stop (S6)
+
+Setup: battery on, **prop off**, throttle low, TX linked; arm in MANUAL, "launch", RC9 low → high (autoc engages); the console
+`RESET` sent automatically 3 s (path 0) / 5 s (path 6) after `NN Control: Switch enabled`; RC9 held high and armed through the
+reboot. Timings from `fc_watch.py` at ~25 Hz ([path 0 CSV](bench-20261113/fc_watch_testB.csv) — its header predates the column-order
+fix: the four mode columns are ANGLE, MANUAL, FAILSAFE, OVERRIDE in that order; [path 6 CSV](bench-20261113/fc_watch_testB2_path6.csv)).
+"Held" = from the last change of the xiao's command to the hand-back (RC6 back to the pilot's switch).
+
+| run | event | measured |
+|---|---|---|
+| path 0 (StraightAndLevel) | normal **path-complete stop** (17.1 s) | INAV held the last command **1.43 s** — roll 1916, pitch 1980 (near full rates), throttle 1021 — then the pilot's sticks |
+| path 0 | **xiao RESET** 3 s after engage | held **1.40 s** — roll 1420, pitch 1159, **throttle 1987** — then the pilot's sticks |
+| path 0 | after the reboot (boot banner 8 s after the reset) | **the xiao re-engaged by itself 9.6 s after the reset** (armed, RC9 high, no pilot action), new origin, opening with roll 1023 |
+| path 0 | pilot disarm while re-engaged | motor off; channels held ~1.3 s, then the pilot's |
+| path 6 (index 5, SeededRandomB) | **xiao RESET** 5 s after engage | held **1.35 s** — roll 1136, pitch 1117, **throttle 1991** |
+| path 6 | after the reboot | **re-engaged by itself 9.9 s after the reset**, throttle 1963; flew the whole path (40.2 s) |
+| path 6 | path-complete stop of the re-engaged run | held **1.38 s** — roll 1169, pitch 1129, **throttle 1992** |
+| both | **RC9 low** (the escape) | override off within one sample (~40 ms); the xiao logged "Servo reset detected - autoc re-arm allowed" |
+
+**Confirmed hazards (today's firmware and configuration)**:
+1. **Every stop** (path end, xiao reset; by R16 also a timeout or MSP failure) leaves INAV flying the xiao's last command,
+   **throttle included (up to 1992 µs here)**, for **1.35–1.43 s** (×4), as R16 predicted (200 ms + 200 + `failsafe_delay` × 100).
+   ⇒ ladder **L4** (neutral, minimum-throttle frames on every stop).
+2. **A xiao reboot while armed with RC9 high re-engages autoc by itself ~9.6–9.9 s later** (×2), from a new origin, with no pilot
+   action (R18). ⇒ ladder **L2** (no resume until disarm → arm). For the re-fly the mitigation is the pilot brief: **RC9 off after any
+   xiao glitch**.
+3. RC9 low hands control back at once, every time (the escape works, R8).

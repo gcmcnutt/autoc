@@ -53,7 +53,7 @@ no number in those cells is invented here.
 | FC reboot | yes: outputs stop, boots disarmed | ~2–2.5 s *(inf.)*, MANUAL passthrough | no in-flight re-arm (config of record) | steering marginal; power: no | — | ⏳ T056 (B8, H4) |
 | FC HardFault | yes: `stopMotors()`, then a halt (`fc/fc_hardfaults.c:93-110`) | never: surfaces frozen at their last pulses *(inf.)* | never | **no recovery path** (no watchdog to reboot it) | none possible | needs a fault hook (L9) |
 | FC hang | **never**: motor frozen at its last value *(inf.)* | never | — | **no recovery path** | none possible | needs a hang hook (L9) |
-| xiao reboot / wedge | no: ~1.4 s at the last command, then the pilot's throttle stick | ~1.4 s | ~1.4 s | ok, but 1.4 s at the last policy command | 1: RC9 off (else M5) | ⏳ T056 (B4, B5, H3) |
+| xiao reboot / wedge | no: ~1.4 s at the last command, then the pilot's throttle stick | ~1.4 s | ~1.4 s | ok, but 1.4 s at the last policy command | 1: RC9 off (else M5) | **2026-11-13**: hold 1.35–1.43 s ×4 at the last command, throttle up to 1992 µs; self re-engage 9.6 / 9.9 s ×2 ([results](bench-results-20261113.md)) |
 | GPS brownout | no: nothing declares a fault | RC9 off, ~1 RX frame | not lost | depends on the pilot noticing | 1: RC9 off | ⏳ T056 (H6) |
 | MSP flood | no; if RAW_RC is starved, as M3 | ~1.4 s if starved *(inf.)*; RC9 off | not lost (armed) | *(inf.)* | 1: RC9 off | ⛔ H5 held; ⏳ T056 (B10) |
 
