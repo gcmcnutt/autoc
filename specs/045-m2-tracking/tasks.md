@@ -340,7 +340,9 @@ reviewable against the configuration of record.
 ### Article 2 (only if it will fly in the window; FR-019)
 
 - [ ] T050 [P] [US4] (operator) Article 2 (`xiao/inav-hb1-art2.cfg`: HGLRCF722LITE, M10Q-5883). Apply and read back its
-  outstanding fixes (`align_mag_yaw = 3600`, `vbat_scale = 1110`) and the GNSS, AIR_4G and calibration-policy rows. Run quickstart
+  outstanding fixes (`align_mag_yaw = 3600`, `vbat_scale = 1110`) and the GNSS, AIR_4G and calibration-policy rows. Check that its integrated ELRS
+  receiver gives **no pulses** on signal loss (operator 2026-11-13; article 1's receiver is set that way): `fc_watch.py`, TX off ⇒
+  `rc_link_lost` + `FAILSAFE` within ~1 s. Run quickstart
   §§ 1–4 and 4b and record its receiver identity (A5). Record all of it in a new `specs/045-m2-tracking/config-changeset-art2.md`
   and update `xiao/inav-hb1-art2.cfg`
 

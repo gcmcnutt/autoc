@@ -26,7 +26,7 @@ poses, `cal_verify.py accel`), T036 (C4 gyro zero / gravity; `init_gyro_cal` OFF
 T038 (C6 panel tilts → `align_mag_*`, before T044), T039 (C7 xiao orientation photo).
 
 **[SERVO], motor disconnected — safety "before" record (US7-A)**
-- [ ] **T056**: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
+- [~] **T056** *(started 2026-11-13: A7 receiver failsafe done; Test B — xiao reboot while engaged — next)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
   vs DROP in RAM only (never saved), with pilot-action counts and timings. H5 (MSP flood) stays held.
 
 **[PROP], restrained (US4 / US5)**: T040 (D1 mount survey, `mount_survey.py`), T041 (D2 compass vs current + servo sweep, I2C
@@ -38,6 +38,9 @@ calibration, 8 bearings; check the declination sign first), T054 (satellite-bloc
 
 **Then**: T049 (apply and read back the final change set; approve writing it into `xiao/inav-hb1.cfg`), T050 (article 2, only if it
 flies).
+- [ ] **Article 2 receiver failsafe (with T050)**: the HGLRC F722 Lite's integrated ELRS (CRSF) must also give **no pulses** on
+  signal loss, not a canned / last-position pattern. Check the ELRS receiver's failsafe setting, then prove it: `fc_watch.py`, TX
+  off ⇒ `rc_link_lost=1` and `FAILSAFE=1` within ~1 s (CRSF has no failsafe flag: INAV sees frames stop, + ~100 ms).
 
 **Not bench — needs the admin AWS profile**: T009, T013 (`s3_egress_check.py --profile <admin> --run <id> --day 2026-11-12` for
 mini runs A and B; run IDs in the MANIFEST), T113 (month-end egress < 100 GB).
@@ -80,7 +83,7 @@ to this file.
   `msp_override_channels`, `align_mag*`, `align_board_*`, `reboot_character`, `blackbox_rate_denom`, the blackbox field groups,
   `debug_mode`, `fw_p_level`, `max_angle_inclination`, `nav_rth_*`, `nav_disarm_on_landing`, `switch_disarm_delay`,
   `disarm_always`, `serial` (which UART carries the xiao's MSP and at what baud).
-- [ ] **A7 Receiver protocol and its failsafe mode.** Article 1 SBUS / article 2 CRSF; the receiver's own failsafe setting
+- [x] **A7 Receiver protocol and its failsafe mode.** *(2026-11-13, article 1: TX off ⇒ `rc_link_lost` + `FAILSAFE` at once — the receiver sends no pulses on loss, as set intentionally; [results](bench-results-20261113.md). ⏳ Article 2's integrated ELRS: same check before it flies.)* Article 1 SBUS / article 2 CRSF; the receiver's own failsafe setting
   ("no pulses" vs "hold" vs custom). ⚠️ A receiver set to *hold* without a failsafe flag is **never detected** by INAV (R17).
 - [~] **A8 xiao build and boot log** *(heartbeat captured; boot banner / genome hash still owed)* (`/dev/ttyACM0`, listen only; don't script-race the 8 s boot window). Firmware build, the
   NN genome hash (expect `a5ed3521ea1e70b7`), flight-log format version, the MSP poll rate actually used.

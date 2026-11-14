@@ -18,3 +18,17 @@ watched live from the DGX. File: `flight_001.bin` (11-08, 307 968 B, CRC `645AC9
 Not exercised on the bench: a > 5 s ACK stall without a disconnect (the inactivity path is unit-tested in `ble_dl2_tests`), and
 the download-time MSP slow poll directly (shown indirectly: the arm was noticed within ~0.5 s during a download). Laptop distance
 not recorded (desk, a few metres).
+
+## Safety "before" record (T056), started — receiver failsafe mode (A7)
+
+Tool: [`fc_watch.py`](fc_watch.py) — read-only MSP watch of the FC's USB port at ~20 Hz (arm state, FAILSAFE / MSP RC OVERRIDE /
+MANUAL / ANGLE by permanent box id, RC_LINK / FAILSAFE_SYSTEM arming flags, merged channels); CSV
+[`bench-20261113/fc_watch_safety.csv`](bench-20261113/fc_watch_safety.csv). Box positions read back: ARM 0, ANGLE 3, MANUAL 20,
+FAILSAFE 29, MSP RC OVERRIDE 40 (as bench A3).
+
+| test | result |
+|---|---|
+| **A7: TX off (disarmed), then on** — article 1, SBUS receiver | TX off at 16:21:46 ⇒ INAV set **`rc_link_lost=1` and `FAILSAFE=1`**; channels kept their last good values (INAV's own hold; throttle 987). TX on ⇒ cleared at 16:22:03. ⇒ The receiver signals the loss (**no pulses on signal loss**, set intentionally by the operator), not a canned "hold" pattern INAV can't detect. |
+
+Next (deferred to a later session, operator): Test B — xiao reboot while engaged (B4 hold window, B5 / H3 self re-engage) with
+console `RESET` and `fc_watch.py`.
