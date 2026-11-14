@@ -133,3 +133,11 @@ Same setup (prop off, TX linked, **3D fix indoors, ~21 sats**); arm in MANUAL, l
    today; under LAND (armed through the failsafe) the xiao would not notice the failsafe at all. Input to the R-1 decision.
 4. RTH while engaged: untested (it would need RC6 off MANUAL during the hand-back). *(inf.)* RTH also lights NAV ALTHOLD, so the
    xiao would stop the same way.
+
+### GPS signal loss attempt (H6 variant) — not achieved
+
+A metal pot over the article's GPS (Matek M8Q, its own patch antenna), disarmed: **18–19 → 11–13 sats, the 3D fix kept**
+([CSV](bench-20261113/fc_watch_testB3rth_gps.csv), `fc_watch.py --gps`; the `eph_m` column reads −1 there, a length-check bug
+fixed after the run). An open-bottomed pot doesn't attenuate enough to drop below `gps_min_sats` 6. Options: foil all round the
+module (underside included) or a closed tin; otherwise the outdoor session / re-fly exercises GPS loss for real. The planned RTH
+run did not happen (the TX went off at 20:14).

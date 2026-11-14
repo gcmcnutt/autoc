@@ -21,7 +21,8 @@ import time
 import serial
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from msp_bench_read import MSP_BOXIDS, MSP2_INAV_STATUS, find_fc_port, req  # noqa: E402
+from msp_bench_read import (MSP_BOXIDS, MSP2_INAV_STATUS, MSP_GPSSTATISTICS, MSP_RAW_GPS, find_fc_port,  # noqa: E402
+                            parse_gps_stats, parse_raw_gps, req)
 
 MSP_RC = 105
 PERM = {"ARM": 0, "ANGLE": 1, "MANUAL": 12, "FAILSAFE": 27, "OVERRIDE": 50, "POSHOLD": 11, "RTH": 10}
@@ -36,6 +37,8 @@ def main():
     ap.add_argument("--csv", default=None)
     ap.add_argument("--chan-step", type=int, default=40, help="print a channel change larger than this many µs (default 40)")
     ap.add_argument("--print-chans", default=",".join(CH), help="channels whose changes are printed (default all; the CSV has all)")
+    ap.add_argument("--gps", action="store_true", help="also poll GPS fix / sats / EPH every 4th sample; print fix or sats changes "
+                    "(adds gps_fix, sats, eph_m CSV columns)")
     args = ap.parse_args()
 
     s = serial.Serial(args.port or find_fc_port(), 115200, timeout=0.02)
@@ -47,9 +50,10 @@ def main():
     w = csv.writer(open(args.csv, "w", newline="")) if args.csv else None
     if w:
         # column order = the order the values are written below (flags, then modes in PERM order without ARM)
-        w.writerow(["t_s", "armed", "rc_link_lost", "fs_system"] + [n for n in PERM if n != "ARM"] + list(CH))
+        w.writerow(["t_s", "armed", "rc_link_lost", "fs_system"] + [n for n in PERM if n != "ARM"] + list(CH)
+                   + (["gps_fix", "sats", "eph_m"] if args.gps else []))
 
-    t0 = time.time(); prev = None; prevch = None
+    t0 = time.time(); prev = None; prevch = None; n = 0; gps = {"fix": -1, "sats": -1, "eph_m": -1.0}; prevgps = None
     while time.time() - t0 < args.seconds:
         st = req(s, MSP2_INAV_STATUS, timeout=0.2)
         rc = req(s, MSP_RC, timeout=0.2)
@@ -64,8 +68,21 @@ def main():
         chans = struct.unpack("<%dH" % (len(rc) // 2), rc)
         ch = {k: (chans[i] if i < len(chans) else 0) for k, i in CH.items()}
         state = {**flags, **modes}
+        if args.gps and n % 4 == 0:
+            g = req(s, MSP_RAW_GPS, timeout=0.2); gs = req(s, MSP_GPSSTATISTICS, timeout=0.2)
+            if g and len(g) >= 18:
+                d = parse_raw_gps(g); gps["fix"], gps["sats"] = d["fix"], d["sats"]
+            if gs and len(gs) >= 20:   # INAV 8.0: 20 bytes (u16, 3 × u32, hdop, eph, epv)
+                gps["eph_m"] = parse_gps_stats(gs)["eph_m"]
+            key = (gps["fix"], gps["sats"])
+            if key != prevgps:
+                print(f"{time.strftime('%H:%M:%S')} t={t:7.2f}s  gps fix={gps['fix']} sats={gps['sats']} eph={gps['eph_m']:.2f} m",
+                      flush=True)
+                prevgps = key
+        n += 1
         if w:
-            w.writerow([f"{t:.3f}"] + list(state.values()) + list(ch.values()))
+            w.writerow([f"{t:.3f}"] + list(state.values()) + list(ch.values())
+                       + ([gps["fix"], gps["sats"], f"{gps['eph_m']:.2f}"] if args.gps else []))
         if state != prev:
             print(f"{time.strftime('%H:%M:%S')} t={t:7.2f}s  " + " ".join(f"{k}={v}" for k, v in state.items())
                   + "   ch " + " ".join(f"{k}={v}" for k, v in ch.items()), flush=True)
