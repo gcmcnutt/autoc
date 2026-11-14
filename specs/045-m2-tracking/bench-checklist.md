@@ -26,7 +26,7 @@ poses, `cal_verify.py accel`), T036 (C4 gyro zero / gravity; `init_gyro_cal` OFF
 T038 (C6 panel tilts → `align_mag_*`, before T044), T039 (C7 xiao orientation photo).
 
 **[SERVO], motor disconnected — safety "before" record (US7-A)**
-- [~] **T056** *(2026-11-13 done: A7 receiver failsafe; B4 / B5 / H3 xiao reboot while engaged ×2 — hold 1.35–1.43 s incl. full throttle, self re-engage ~9.8 s; S6 path-end hold; RC9 escape; **B6 / H1 10 s TX off while engaged ×2**: DROP disarm, surfaces frozen at the xiao's last command, no automatic re-arm, xiao stays out until RC9 low → high. Still to do: B2, B3, B7–B10, H1 0.5 s / 2 s, H2, H4, H6, LAND in RAM, ×3 repeats; ⏳ pull the INAV blackbox for the B6 stage-1 window)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
+- [~] **T056** *(2026-11-13 done: A7 receiver failsafe; B4 / B5 / H3 xiao reboot while engaged ×2 — hold 1.35–1.43 s incl. full throttle, self re-engage ~9.8 s; S6 path-end hold; RC9 escape; **B6 / H1 10 s TX off while engaged ×2**: DROP disarm, surfaces frozen at the xiao's last command, no automatic re-arm, xiao stays out until RC9 low → high. Still to do: B2, B3, B7–B10, H1 0.5 s / 2 s, H2, H4, H6, LAND in RAM, ×3 repeats; stage 1 = 1.19 s at the xiao's full throttle, from the blackbox pulled over MSP with `fc_blackbox_dump.py`)*: bench-checklist B1–B10 and H1–H4, H6, H7, ×3 each, on today's configuration; `failsafe_delay` 10 / 5 / 3 and LAND
   vs DROP in RAM only (never saved), with pilot-action counts and timings. H5 (MSP flood) stays held.
 
 **[PROP], restrained (US4 / US5)**: T040 (D1 mount survey, `mount_survey.py`), T041 (D2 compass vs current + servo sweep, I2C

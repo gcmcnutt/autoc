@@ -61,7 +61,7 @@ no number in those cells is invented here.
 
 | t | INAV | xiao | aircraft | pilot | measured |
 |---|---|---|---|---|---|
-| 0 | the receiver flags failsafe; channels frozen (M1) | flying | the policy flies on | RC9 frozen: no escape | **2026-11-13**: autoc flew on to the disarm (×2); the stage-1 length is not visible over MSP, ⏳ blackbox `failsafePhase` |
+| 0 | the receiver flags failsafe; channels frozen (M1) | flying | the policy flies on | RC9 frozen: no escape | **2026-11-13**: autoc flew on to the disarm (×2), **motor at the xiao's ~1990 throughout**; INAV's loss detection → disarm **1.19–1.20 s** (×3, blackbox) |
 | < 1.2 s, link back | nothing happened; channels resume | flying | unchanged | RC9 works again | ⏳ T056 |
 | 1.2 s | DROP: in-air disarm (M2) | sees the disarm, stops, goes quiet (R16 S3) | motor off; surfaces hold the last rate command, ACRO; may keep rotating | nothing | **2026-11-13** ×2: disarm and xiao stop in the same second; channels frozen at the last command (run 2: roll 1123, pitch 1122, near full) |
 | link back (t_L) | pilot's channels from the first good frame | quiet | pilot steers, motor off | glide; start the re-arm | **2026-11-13** ×2: the pilot's channels from the first sample |

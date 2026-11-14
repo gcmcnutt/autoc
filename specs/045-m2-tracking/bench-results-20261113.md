@@ -85,9 +85,20 @@ into the run. No reset script. [`fc_watch.py`](fc_watch.py) at ~24 Hz, CSV
    (`failsafe.c:599`: failsafe does not exit until it is), then ARM on with low throttle. No automatic re-arm; at least two switch
    actions (×2).
 3. The xiao does not resume after the re-arm while RC9 stays high; RC9 low → high is required (×1, 2.2 s armed).
-4. **Not measured**: the stage-1 window (TX off → disarm). MSP can't show it: INAV updates the RC_LINK / FAILSAFE_SYSTEM arming flags
-   only while disarmed, and the FAILSAFE box only comes on with the procedure (= the disarm under DROP). The INAV blackbox records
-   `failsafePhase` and `rxSignalReceived` in its slow frames: ⏳ pull the blackbox for 16:47 and 16:54.
+4. **Stage 1 = 1.19 s, at full throttle** (×3). MSP can't show it (INAV updates the RC_LINK / FAILSAFE_SYSTEM arming flags only while
+   disarmed, and the FAILSAFE box comes on with the procedure, i.e. the disarm), so it was read from the INAV blackbox, pulled over
+   MSP with the new read-only [`fc_blackbox_dump.py`](fc_blackbox_dump.py) (7.29 MB in 128 s, 55.7 kB/s; 8 logs, all
+   `INAV 8.0.0 (38ff0d29)`). From INAV's loss detection (`rxSignalReceived` → 0) to the last frame (the disarm):
+
+   | blackbox log | run | loss detected → `rxFlightChannelsValid` 0 | → disarm | motor during stage 1 |
+   |---|---|---|---|---|
+   | .06 (16:43 GPS time) | the operator's dry run | +0.30 s | **+1.20 s** | 1990 (the xiao's command) |
+   | .07 | run 1 | +0.30 s | **+1.19 s** | 1990 |
+   | .08 | run 2 | +0.30 s | **+1.19 s** | 1987 |
+
+   `failsafePhase` reads IDLE in every logged frame: the log stops in the cycle the procedure starts. The receiver's own detection
+   delay (TX off → `rxSignalReceived` 0) is not in the log; it adds to the 1.19 s. The blackbox clock (GPS) runs ~86 s ahead of
+   the host's watcher timestamps (log .07 starts 16:45:48 for an arm the watcher saw at 16:47:13).
 
 **New finding, xiao log**: both runs printed `Flight log: SpanSummary write failed (span 1)`. On a disarm the arm-transition block
 closes the flight file ([msplink.cpp:729](../../xiao/src/msplink.cpp#L729)) before `stopAutoc` writes the span summary
