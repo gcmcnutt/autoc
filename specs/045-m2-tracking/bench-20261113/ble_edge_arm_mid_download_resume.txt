@@ -1,0 +1,15 @@
+# 045 T023 — arm mid-download, then disarm and resume. Edge 157 / Windows, page "Copy log", 2026-11-13. Prop off, battery on, TX linked.
+# xiao console: 16:15:32 "BLE disconnecting active central due to arm state", "BLE advertising disabled", "Flash logger armed -
+# recording flight #2"; 16:15:37 flight #2 finalized, "BLE advertising enabled"; 16:15:50 "BLE download: flight_001.bin from 79440";
+# 16:16:07 "BLE download done: 307968 bytes, CRC 645AC948, 17309 ms (17792 B/s), STAT:307968:953:0:35:155:129"
+2026-11-14T00:15:24.140Z t=0.1ms DL2 flight_001.bin from 0
+2026-11-14T00:15:24.166Z t=26.2ms READY2 size=307968 chunk=240 mtu=247 from=0 window=2
+2026-11-14T00:15:30.127Z t=5987.5ms status STAT:76320:320:0:31:52:45
+2026-11-14T00:15:30.406Z t=6266.7ms disconnected at 79440/307968 of flight_001.bin after 9.2 s connected
+2026-11-14T00:15:30.407Z t=6267.1ms SUMMARY interrupted by disconnect: bytes=79440/307968 (this session 79440 from 0) secs=6.27 kB/s=12.38 chunks=331 dup=0 gap=0 acks=331 errors=0
+2026-11-14T00:15:44.325Z t=20185.6ms connected to XIAO-GP (8PQtbKx/pSe8Mw4VMKHwPA==)
+2026-11-14T00:15:47.954Z t=0.2ms DL2 flight_001.bin from 79440
+2026-11-14T00:15:48.078Z t=123.7ms READY2 size=307968 chunk=240 mtu=247 from=79440 window=2
+2026-11-14T00:16:05.387Z t=17433.3ms status DONE2:307968:645AC948
+2026-11-14T00:16:05.410Z t=17456.0ms CRC expected=645ac948 actual=645ac948 OK; bytes 307968/307968
+2026-11-14T00:16:05.410Z t=17456.3ms SUMMARY done: bytes=307968/307968 (this session 228528 from 79440) secs=17.46 kB/s=12.78 chunks=953 dup=0 gap=0 acks=953 errors=0 ua="... Edg/157.0.0.0"
