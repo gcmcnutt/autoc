@@ -1,12 +1,12 @@
 # 045 — Bench checklist (itemized)
 
-## ▶ Operator TODO — next time at the bench (kept current; updated 2026-11-12)
+## ▶ Operator TODO — next time at the bench (kept current; updated 2026-11-16)
 
 The desk work for these is done; each needs the article, the TX, a phone, the outdoors, or the admin AWS profile. Task IDs are
 in [tasks.md](tasks.md); results go in `bench-results-YYYYMMDD.md` and the [MANIFEST](MANIFEST.md).
 
 **State of the hardware**: the article 1 xiao runs the **045 dev firmware** (BLE download v2, USB console `LIST` / `DUMP:` /
-`QPROF`), not the 11-08 build; its log still holds `flight_001.bin` (11-08). The FC carries the 11-11/12 bench change set, which is
+`QPROF` / `RESET`), not the 11-08 build; its log holds `flight_001.bin` (11-08) and the 11-13 bench flights #2–#11 (erase before the re-fly, T063). The FC carries the 11-11/12 bench change set, which is
 not yet in `xiao/inav-hb1.cfg`. The page that matches the firmware is the current `xiao/web/flight_logger.html` (v1 is gone).
 
 **Desk review (any time)**: read [`pilot-brief.md`](pilot-brief.md) before the next flight (⚠️ new finding: after a
@@ -21,7 +21,7 @@ fills.
 - [x] **T023 arm mid-download** *(2026-11-13: BLE shut down at once, resumed after disarm)* (TX on, motor disconnected): start a download, arm ⇒ BLE drops at once and the xiao's console shows
   normal MSP polling again.
 
-**[USB] — calibration and configuration (US4)**: T034 (A7 receiver failsafe mode, A8 boot banner), T035 (C3 accel 6-point + 12
+**[USB] — calibration and configuration (US4)**: T034 (~~A7 receiver failsafe mode~~ done 11-13; A8 boot banner), T035 (C3 accel 6-point + 12
 poses, `cal_verify.py accel`), T036 (C4 gyro zero / gravity; `init_gyro_cal` OFF), T037 (C5 gyro scale, CW + CCW turn pairs),
 T038 (C6 panel tilts → `align_mag_*`, before T044), T039 (C7 xiao orientation photo).
 
@@ -94,7 +94,7 @@ to this file.
 
 ## B. Behaviour with servos powered — [SERVO], props off (motor disconnected or props off)
 
-- [ ] **B1 Escape: RC9 off while engaged** ⇒ pilot sticks pass through at once (watch the servos). Time the hand-back.
+- [x] **B1 Escape: RC9 off while engaged** *(2026-11-13: every run, override off within one ~40 ms sample, "Servo reset detected")* ⇒ pilot sticks pass through at once (watch the servos). Time the hand-back.
 - [x] **B2 MANUAL (RC6) while engaged** *(2026-11-13: the pilot's RC6 at MANUAL through every engagement, INAV flew ACRO; [results](bench-results-20261113.md))* ⇒ no effect (overridden). Confirms R8 / R16.
 - [~] **B3 RTH / POSHOLD switch (RC8) while engaged, indoors (no GPS fix)** *(2026-11-13, **with** a 3D fix: POSHOLD accepted, nav took throttle + surfaces at once, the xiao stopped on bit 19 = NAV ALTHOLD; RTH not exercised (the pilot's MANUAL blocked it after the hand-back); the no-fix case still open)* ⇒ refused silently; record what the xiao logs (does
   bit 19 fire?).
@@ -157,7 +157,7 @@ the Configurator Outputs (motor channel), INAV `status`, the xiao console and bo
 - [ ] **H1 Link failure**: transmitter off for 0.5 s / 2 s / 10 s while engaged. Measure the stage-1 window, the DROP disarm, servo
   behaviour after the disarm, re-arm after the TX returns. Then LAND (R-1, in RAM): motor output at minimum while armed, ANGLE on
   the surfaces, control back on stick motion; the companion-regains-control caveat.
-- [ ] **H2 Transmitter reboot**: power-cycle the TX while engaged: the time INAV takes to see loss and recovery (SBUS vs CRSF).
+- [x] **H2 Transmitter reboot** *(2026-11-13, B6 run 2: DROP disarm 1.19 s after loss detection; link back 13.5 s after the disarm (TX boot), `rc_link_lost` cleared +0.7 s; SBUS only, CRSF with T050)*: power-cycle the TX while engaged: the time INAV takes to see loss and recovery (SBUS vs CRSF).
 - [ ] **H3 xiao reboot**: (a) reset button / pull its power; (b) a forced watchdog (a test hook, if added); (c) a forced HardFault
   (a test hook). Measure the last-command hold, the hand-back to the pilot's channels, the 8 s delay, and **whether autoc
   re-engages by itself with RC9 left high** (expected today, R18), plus log continuity.
